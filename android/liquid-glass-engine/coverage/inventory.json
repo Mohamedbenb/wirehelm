@@ -1,0 +1,137 @@
+{
+  "version": 1,
+  "notes": "Inventory mapping is not branch, GPU or presentation coverage. No native execution is claimed by a capability probe.",
+  "features": [
+    {
+      "id": "native_brightness_material",
+      "preview": "Brightness component options: Open native brightness backend. Same engine component as the adapter, independent fill/indicator blur, native SeekBar input, motion/hide/recreate; explicit solid fallback if framework access is unavailable.",
+      "tests": "GlassBrightnessMaterialTest covers role policy, geometry, bounded ownership, failed acquisition caching, visibility, close, invalid input and draw failure. NativeBrightnessPaintGeometryTest covers Compose decoding. Device presentation remains separately validated.",
+      "sources": [
+        "src/main/java/com/nodecockpit/customization/GlassBrightnessGeometry.java",
+        "src/main/java/com/nodecockpit/customization/GlassBrightnessMaterial.java"
+      ]
+    },
+    {
+      "id": "optical_profiles",
+      "preview": "Local lens, Compositor card, Two-shape merge, Notification union, QS / brightness, Classic material",
+      "tests": "Material uniform, mask, blur and contrast host tests; shader submissions require device execution",
+      "sources": [
+        "src/main/java/com/nodecockpit/customization/CardLiquidMergeShader.java",
+        "src/main/java/com/nodecockpit/customization/CardLiquidParameters.java",
+        "src/main/java/com/nodecockpit/customization/CardLiquidShader.java",
+        "src/main/java/com/nodecockpit/customization/CardNotificationShader.java",
+        "src/main/java/com/nodecockpit/customization/NativeLiquidMaterial.java",
+        "src/main/java/com/nodecockpit/customization/NativeQsShader.java",
+        "src/main/kotlin/com/example/remote_control/glasscard/CardCompositorMaterial.kt",
+        "src/main/kotlin/com/example/remote_control/glasscard/GlassBlur.kt",
+        "src/main/kotlin/com/example/remote_control/glasscard/GlassLensRenderer.kt",
+        "src/main/kotlin/com/example/remote_control/glasscard/GlassReaction.kt",
+        "src/main/kotlin/com/example/remote_control/glasscard/GlassTouchRipples.kt",
+        "src/main/java/com/nodecockpit/customization/GlassKawaseBlur.java",
+        "src/main/java/com/nodecockpit/customization/GlassBackdropBlur.java"
+      ]
+    },
+    {
+      "id": "uniform_contracts",
+      "preview": "Exact production uniform packers drive each profile; masks have independent controls",
+      "tests": "CardMergeUniformsTest CardNotificationUniformsTest NativeQsUniformsTest NativeLiquidMaterialTest; on-device CPU checks",
+      "sources": [
+        "src/main/java/com/nodecockpit/customization/CardMergeUniforms.java",
+        "src/main/java/com/nodecockpit/customization/CardNotificationUniforms.java",
+        "src/main/java/com/nodecockpit/customization/NativeQsUniforms.java",
+        "src/main/java/com/nodecockpit/customization/GlassSliderGeometry.java"
+      ]
+    },
+    {
+      "id": "touch_and_lighting",
+      "preview": "Touch down/up, press, reaction, four ripples and manual/live sensor lighting",
+      "tests": "CardRippleTimelineTest TouchRippleStateTest; live touch and sensor require device",
+      "sources": [
+        "src/main/java/com/nodecockpit/customization/CardRippleTimeline.java",
+        "src/main/kotlin/com/example/remote_control/glasscard/LightSourceController.kt",
+        "src/main/kotlin/com/example/remote_control/glasscard/TouchRippleState.kt"
+      ]
+    },
+    {
+      "id": "foreground_and_policy",
+      "preview": "Configurable canvas text/sun, native TextView/drawable sample and known-input policy probe",
+      "tests": "ForegroundInkStyleTest ForegroundInkPolicyTest GlassContrastTest SmoothInkToneTest DampedShadeTest MaterialTuningTest GlassTransitionMathTest",
+      "sources": [
+        "src/main/java/com/nodecockpit/customization/DampedShade.java",
+        "src/main/java/com/nodecockpit/customization/ForegroundInkStyle.java",
+        "src/main/java/com/nodecockpit/customization/GlassInkDrawable.java",
+        "src/main/java/com/nodecockpit/customization/GlassContrast.java",
+        "src/main/java/com/nodecockpit/customization/GlassTransitionMath.java",
+        "src/main/java/com/nodecockpit/customization/MaterialTuning.java",
+        "src/main/java/com/nodecockpit/customization/SmoothInkTone.java",
+        "src/main/java/com/nodecockpit/customization/TimedShade.java",
+        "src/main/kotlin/com/example/remote_control/glasscard/DrawerForegroundProtection.kt",
+        "src/main/kotlin/com/example/remote_control/glasscard/ForegroundInkPolicy.kt"
+      ]
+    },
+    {
+      "id": "resources_and_metrics",
+      "preview": "Own-window engine HUD, CPU/draw metrics, hide/recreate lifecycle and runtime lease/readiness checks",
+      "tests": "GlassShaderLeaseTest GlassFrameStatsTest NativeSurfaceReadinessTest; actual driver/fence behavior requires device",
+      "sources": [
+        "src/main/java/com/nodecockpit/customization/GlassFrameObserver.java",
+        "src/main/java/com/nodecockpit/customization/GlassFrameStats.java",
+        "src/main/java/com/nodecockpit/customization/GlassPerformanceHud.java",
+        "src/main/java/com/nodecockpit/customization/GlassResourceMonitor.java",
+        "src/main/java/com/nodecockpit/customization/GlassShaderLease.java",
+        "src/main/java/com/nodecockpit/customization/NativeSurfaceReadiness.java",
+        "src/main/java/com/nodecockpit/customization/GlassFrameCommit.java"
+      ]
+    },
+    {
+      "id": "privileged_transport",
+      "preview": "Read-only compositor capability report; explicit experimental native RenderNode blur probe in Tune / Checks. Native execution and GPU output are not automatically validated.",
+      "tests": "GlassNativeBlurLeaseTest / GlassNativeBlurRegionTest cover CPU lifecycle and geometry. Framework draw, hidden-API availability, motion, blur pixels and compositor transport require device validation.",
+      "sources": [
+        "src/main/java/com/example/remote_control/glasscard/CardCompositorBuffer.java",
+        "src/main/java/com/example/remote_control/glasscard/CardCompositorSampler.java",
+        "src/main/java/com/nodecockpit/customization/CardLiquidSurface.java",
+        "src/main/java/com/nodecockpit/customization/NativeLiquidSurface.java",
+        "src/main/java/com/nodecockpit/customization/NativeUniformBuffer.java",
+        "src/main/java/com/nodecockpit/customization/GlassNativeBackdrop.java",
+        "src/main/java/com/nodecockpit/customization/GlassNativeBlurLease.java",
+        "src/main/java/com/nodecockpit/customization/GlassNativeBlurRegion.java",
+        "src/main/kotlin/com/example/remote_control/glasscard/CardCompositorBroker.kt"
+      ]
+    },
+    {
+      "id": "configuration_and_host_contract",
+      "preview": "Configuration validation, native-session API, source-bounded merge interface and read-only capabilities",
+      "tests": "Foreground validation and core policy tests; native attachment/session tests require privileged host",
+      "sources": [
+        "src/main/java/com/nodecockpit/customization/EdgeMaterialSurface.java",
+        "src/main/java/com/nodecockpit/customization/GlassMergeGeometry.java",
+        "src/main/java/com/nodecockpit/customization/GlassTestConfig.java",
+        "src/main/java/com/nodecockpit/customization/LiquidGlassEngine.java",
+        "src/main/java/com/nodecockpit/customization/NativeLiquidConfig.java"
+      ]
+    },
+    {
+      "id": "lab_harness",
+      "preview": "Scenario controls, background motion, profile cycle, fallback/failure/recreate, policy model and saved state; multi-pointer draggable cards, direct merge playground and functional toggle/disabled glass buttons",
+      "tests": "GlassLabStateTest; on-device CPU checks; shader failure injection is an interactive device test; GlassLabInteractionTest",
+      "sources": [
+        "src/main/java/com/nodecockpit/customization/GlassLabChecks.java",
+        "src/main/java/com/nodecockpit/customization/GlassLabRenderer.java",
+        "src/main/kotlin/com/nodecockpit/customization/GlassLabGeometry.kt",
+        "src/main/kotlin/com/nodecockpit/customization/GlassLabState.kt",
+        "src/main/kotlin/com/nodecockpit/customization/GlassPreviewView.kt",
+        "src/main/kotlin/com/nodecockpit/customization/GlassLabInteraction.kt"
+      ]
+    },
+    {
+      "id": "native_frame_shader_bridge",
+      "preview": "Privileged brightness container prototype only; existing SF QS shader. Native baseline remains for progress/indicator. No unprivileged lab execution claimed.",
+      "tests": "GlassNativeFrameStateTest covers bounded frame join, generation, visibility, late callbacks, readiness, lost/clipping, dimensions and redundant submissions. Framework/GPU presentation requires device validation.",
+      "sources": [
+        "src/main/java/com/nodecockpit/customization/GlassNativeFrameState.java",
+        "src/main/java/com/nodecockpit/customization/GlassNativeFrameMaterial.java"
+      ]
+    }
+  ]
+}

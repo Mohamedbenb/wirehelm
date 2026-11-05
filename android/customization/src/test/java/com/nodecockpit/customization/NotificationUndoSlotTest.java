@@ -1,0 +1,16 @@
+package com.nodecockpit.customization;
+import org.junit.Test;
+import static org.junit.Assert.*;
+public class NotificationUndoSlotTest {
+    @Test public void idleHasNothingToRestore(){NotificationUndoSlot s=new NotificationUndoSlot();assertNull(s.peek());assertFalse(s.undoable(0));assertNull(s.clear(1));}
+    @Test public void retainsSameOriginalReferencesWithoutCopy(){NotificationUndoSlot s=new NotificationUndoSlot();Object entry=new Object(),generation=new Object();NotificationUndoSlot.Pending p=s.begin("key",entry,generation,100);assertSame(entry,p.entry);assertSame(generation,p.generation);assertTrue(s.matches("key",entry,generation));}
+    @Test public void undoExpiresAtFiveSeconds(){NotificationUndoSlot s=new NotificationUndoSlot();s.begin("key",new Object(),new Object(),100);assertTrue(s.undoable(5099));assertFalse(s.undoable(5100));}
+    @Test public void updateSameKeyInvalidatesOriginalGeneration(){NotificationUndoSlot s=new NotificationUndoSlot();Object entry=new Object(),old=new Object();s.begin("key",entry,old,0);assertFalse(s.matches("key",entry,new Object()));assertTrue(s.matches("key",entry,old));}
+    @Test public void reusedKeyWithDifferentEntryCannotResurrectOriginal(){NotificationUndoSlot s=new NotificationUndoSlot();Object entry=new Object(),generation=new Object();s.begin("key",entry,generation,0);assertFalse(s.matches("key",new Object(),generation));}
+    @Test public void differentKeyIsNotSameNotification(){NotificationUndoSlot s=new NotificationUndoSlot();Object entry=new Object(),generation=new Object();s.begin("one",entry,generation,0);assertFalse(s.matches("two",entry,generation));}
+    @Test public void staleClearCannotConsumeNewPendingDismissal(){NotificationUndoSlot s=new NotificationUndoSlot();NotificationUndoSlot.Pending first=s.begin("one",new Object(),new Object(),0);NotificationUndoSlot.Pending second=s.begin("two",new Object(),new Object(),100);assertNull(s.clear(first.token));assertSame(second,s.peek());}
+    @Test public void consumeOnceSupportsUndoOrCommitWithoutDuplicate(){NotificationUndoSlot s=new NotificationUndoSlot();NotificationUndoSlot.Pending p=s.begin("one",new Object(),new Object(),0);assertSame(p,s.clear(p.token));assertNull(s.clear(p.token));assertFalse(s.undoable(1));}
+    @Test public void clearedAppRemovalCannotLaterMatch(){NotificationUndoSlot s=new NotificationUndoSlot();Object entry=new Object(),generation=new Object();NotificationUndoSlot.Pending p=s.begin("one",entry,generation,0);s.clear(p.token);assertFalse(s.matches("one",entry,generation));}
+    @Test public void rearmingSameKeyDoesNotAcceptOldToken(){NotificationUndoSlot s=new NotificationUndoSlot();Object entry=new Object(),generation=new Object();NotificationUndoSlot.Pending old=s.begin("key",entry,generation,0);s.clear(old.token);NotificationUndoSlot.Pending next=s.begin("key",entry,generation,200);assertNotEquals(old.token,next.token);assertNull(s.clear(old.token));assertSame(next,s.peek());}
+    @Test public void missingIdentityRejected(){for(int i=0;i<3;i++){NotificationUndoSlot s=new NotificationUndoSlot();try{s.begin(i==0?"":"key",i==1?null:new Object(),i==2?null:new Object(),0);fail();}catch(IllegalArgumentException expected){}}}
+}

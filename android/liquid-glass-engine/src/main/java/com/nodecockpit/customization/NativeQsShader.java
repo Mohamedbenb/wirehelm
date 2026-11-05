@@ -1,0 +1,13 @@
+package com.nodecockpit.customization;
+/** Native shape optics plus one clipped spatial brightness-progress blur mask. */
+final class NativeQsShader {
+ private static final String INDICATOR_TEMPLATE="float progressMask(float2 p){float4 s=u[81];float4 a=u[82];float4 clip=u[83];if(s.z<=0.5||s.w<=0.5||a.z<=0.001||a.x<=0.0||p.x<clip.x||p.y<clip.y||p.x>clip.z||p.y>clip.w)return 0.0;float width=2.0*s.z*clamp(a.x,0.0,1.0);float cx=a.w>0.5?s.x+s.z-width*0.5:s.x-s.z+width*0.5;float2 halfSize=float2(width*0.5,s.w);float d=sdRoundedBox(p-float2(cx,s.y),halfSize,min(a.y,min(halfSize.x,halfSize.y)));return 1.0-smoothstep(-0.75,0.75,d);} ";
+ private static final String INDICATOR=INDICATOR_TEMPLATE.replace("progressMask", "indicatorMask").replace("u[81]","u[84]").replace("u[82]","u[85]").replace("u[83]","u[86]").replace("return 1.0-smoothstep(-0.75,0.75,d);","return clamp(a.w,0.0,1.0)*(1.0-smoothstep(-0.75,0.75,d));");
+ private static final String PROGRESS="float progressMask(float2 p){float4 s=u[81];float4 a=u[82];float4 clip=u[83];if(s.z<=0.5||s.w<=0.5||a.z<=0.001||a.x<=0.0||p.x<clip.x||p.y<clip.y||p.x>clip.z||p.y>clip.w)return 0.0;float edge=a.w>0.5?s.x+s.z-2.0*s.z*clamp(a.x,0.0,1.0):s.x-s.z+2.0*s.z*clamp(a.x,0.0,1.0);float cutoff=a.w>1.5?(s.y+s.w-2.0*s.w*clamp(a.x,0.0,1.0))-p.y:(a.w>0.5?edge-p.x:p.x-edge);float d=max(sdRoundedBox(p-s.xy,s.zw,min(a.y,min(s.z,s.w))),cutoff);return 1.0-smoothstep(-0.75,0.75,d);} ";
+ private static String progressSource(){String s=CardNotificationShader.SOURCE;int begin=s.indexOf("float expandMask(float2 p)"),end=s.indexOf("half4 main(float2 coord)",begin);if(begin<0||end<begin)throw new IllegalStateException("Progress shader source contract");return s.substring(0,begin)+PROGRESS+INDICATOR+s.substring(end);}
+ static final String SOURCE=progressSource()
+ .replace("uniform float4 u[53];","uniform float4 u[87];")
+ .replace("for(int i=0;i<13;i++){float4 s=u[17+i*2];float4 a=u[18+i*2];", "for(int i=0;i<16;i++){float4 s=u[17+i*4];float4 corners=u[18+i*4];float4 a=u[19+i*4];float4 clip=u[20+i*4];if(p.x<clip.x||p.y<clip.y||p.x>clip.z||p.y>clip.w)continue;")
+ .replace("float radius=clamp(a.x,0.0,min(s.z,s.w));", "float corner=local.x<0.0?(local.y<0.0?corners.x:corners.w):(local.y<0.0?corners.y:corners.z);float radius=clamp(corner,0.0,min(s.z,s.w));")
+ .replace("float control=u[16].x>0.5?expandMask(p):0.0;control*=u[15].w;float diffusion=mix(u[16].z,u[16].y,control);float contribution=max(u[16].w,control);", "float control=progressMask(p);float indicator=indicatorMask(p);float diffusion=sqrt(u[16].z*u[16].z+max(control*u[82].z*u[82].z,indicator*u[85].z*u[85].z));float contribution=max(u[16].w,max(control,indicator));");
+}

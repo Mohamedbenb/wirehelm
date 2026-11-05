@@ -1,0 +1,1 @@
+package android.view; public abstract class CompositionSamplingListener { public CompositionSamplingListener(java.util.concurrent.Executor e){} public abstract void onSampleCollected(float l); public static void register(CompositionSamplingListener l,int d,SurfaceControl s,android.graphics.Rect r){} public void destroy(){} }

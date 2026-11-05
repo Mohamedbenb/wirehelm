@@ -1,0 +1,9 @@
+# Windows Bluetooth — 1.3.3+46
+
+Status and discovery use the existing persistent SSH command worker instead of the interactive desktop worker. Basic radio/device status appears before slower hardware and battery enumeration. Native type definitions are versioned and reused per worker process. Volume, pairing and profile operations retain their existing interactive desktop context.
+
+Native searches return connected and saved devices for ordinary status checks. Inquiry additionally includes unknown devices only when their Windows lastSeen timestamp is within the current inquiry window (two-second timestamp tolerance). Known paired devices remain listed regardless of discoverability. They are not evidence of proximity. The UI separates Connected, Paired and Found during scan. Unpaired scan entries expire after 30 seconds; absent saved devices are removed on authoritative refresh. Battery metadata survives lightweight refreshes. Windows Repair/Unpair actions move to card overflow menus; primary connection actions remain visible. Bottom padding protects explanatory text from the scan button.
+
+Validation: native backend and Flutter Bluetooth tests passed. Local native warm status enumeration took about 10 ms after an initial 1352 ms compile/enumeration; this excludes SSH/UI transport. Windows reported Mibro connected and Airpods paired/disconnected. Fresh scan excluded cached inkax. No pairing or disconnect action was performed in this test. Discovery timestamp precision and classic Bluetooth discoverability remain Windows limitations; this backend does not constitute BLE discovery.
+
+Installed on phone and verified Connected Mibro / Paired Airpods sections, Windows overflow menu, completed live scan with no stale inkax result, and footer clearance using a screenshot. flutter analyze reported no issues.

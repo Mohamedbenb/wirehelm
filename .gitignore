@@ -1,0 +1,82 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be included in version control, so this line
+# is commented out by default.
+#.vscode/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+/coverage/
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio will place build artifacts here
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# Widget Preview related
+.widget_preview/
+
+# Local Go toolchain/cache and generated Android tsnet bindings.
+.tools/
+native/tsnet/.cache/
+android/app/libs/tsnet.aar
+android/app/libs/tsnet-sources.jar
+
+# Machine-local data and build inputs.
+/.codex/
+/.codex-attachments/
+/.codex-remote-attachments/
+/.gradle-home/
+/gradle-project-cache/
+/experiments/
+**/.gradle/
+**/.kotlin/
+**/.cxx/
+**/build/
+**/local.properties
+**/key.properties
+*.jks
+*.keystore
+*.apk
+*.aab
+*.realm
+/engine.stamp
+/build[0-9]*.png
+/vibrator*.txt
+/docs/PI_SSH_ACCESS.md
+/docs/CAMERA_RING_NOTIFICATION_ONLY_AMBIENT.md
+/third_party/liquid-glass-android-views/
+/modules/node-cockpit-carrier/cfg.db
+/android/customization/src/main/assets/node-cockpit-*.zip
+/android/customization/src/main/assets/node-cockpit-*.sha256

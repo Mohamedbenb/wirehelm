@@ -1,0 +1,6 @@
+id=node_cockpit_system
+name=Node Cockpit local recovery backend
+version=1.0.0
+versionCode=1
+author=Node Cockpit
+description=SystemUI restart watchdog and bounded local configuration helper. No mounts, system properties, firmware or boot image changes.

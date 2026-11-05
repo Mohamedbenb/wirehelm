@@ -1,0 +1,9 @@
+# Default source searches must not rediscover build outputs or old snapshots.
+/build/
+**/build/
+.dart_tool/
+.tools/
+**/.gradle/
+**/classes/
+# Cached platform source and abandoned investigation hosts are not app sources.
+/experiments/

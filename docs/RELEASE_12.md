@@ -1,0 +1,12 @@
+# Node Cockpit build 12
+
+- Device tools are grouped into Remote tools, Device and Commands in a scrollable sheet. Global Settings groups SSH identities, Tailscale, appearance and app updates.
+- Remote keyboard has a compact text composer, phone clipboard paste, Keys and Shortcuts pads, and safe spacing for the phone keyboard/navigation bar. Drafts clear only after successful acknowledgement; newer or failed drafts are preserved.
+- Fixed SSH receive-buffer growth during fragmented transfers. A regression simulating a 42 MiB stream keeps its backing storage at or below 128 KiB, compared with 32 MiB under the previous allocation strategy. This removes avoidable memory pressure; it does not guarantee a particular Internet speed.
+- Updater shows rolling speed and elapsed time without progress instead of only a lifetime average. Download tests still compare network-only throughput against APK staging and verification.
+- Cancel interrupts stalled downloads and pending SFTP setup promptly. It closes only that transfer's SFTP channel; the device connection stays available. Late native progress from a cancelled download cannot overwrite a new download's progress.
+- Windows helpers confirm readiness with a token handshake through their encrypted SSH tunnel. On this PC Windows OpenSSH can withhold live console output and can deliver forwarding confirmations several seconds late; the helper now uses a known loopback port, waits for the full startup budget, and launches both standard and desktop workers without a redirected startup pipe. No command is submitted until the handshake succeeds, and a submitted action is never automatically replayed. Startup stderr is retained in a bounded diagnostic, and closed helpers are invalidated so the next request can reconnect promptly.
+
+Validation: `flutter analyze` reports no issues, and the 89-test suite passed in the preceding release validation. Two added real-process regressions also prove that standard and desktop helpers start and reuse their process when all SSH startup stdout is withheld. The final lifecycle cleanup is analyzer-clean. Local warmed helper requests measured roughly 39–76 ms; these local timings exclude the phone and network transport. On the A36 over LAN, the installed build reached the Desktop screen with live Display mode and Screen states and no helper-startup timeout; the first connection was about 500 ms.
+
+Phone observations are recorded after installation.

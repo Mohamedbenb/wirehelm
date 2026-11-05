@@ -1,0 +1,8 @@
+package com.nodecockpit.customization;
+import java.util.*;import org.junit.Test;import static org.junit.Assert.*;
+public class ForegroundInkStyleTest {
+ @Test public void automaticProtectionContrastsAgainstInk(){ForegroundInkStyle s=ForegroundInkStyle.DEFAULT;assertEquals(0xff000000,s.outline(0xffffffff));assertEquals(0xffffffff,s.outline(0xff000000));}
+ @Test public void customColorsOpacityAndOffsetsRemainIndependent(){Map<String,Object> v=new HashMap<>();v.put("outlineAuto",false);v.put("outlineColor","#123456");v.put("outlineOpacity",50);v.put("shadowAuto",false);v.put("shadowColor","#abcdef");v.put("shadowOpacity",0);v.put("shadowX",2);v.put("shadowY",-3);ForegroundInkStyle s=new ForegroundInkStyle(v);assertEquals(0x80123456,s.outline(0xffffffff));assertEquals(0x00abcdef,s.shadow(0xffffffff));long p=s.offset(2);assertEquals(4,Float.intBitsToFloat((int)(p>>>32)),0);assertEquals(-6,Float.intBitsToFloat((int)p),0);}
+ @Test public void rejectsInvalidTypesColorsAndBudgets(){assertFalse(ForegroundInkStyle.valid(Collections.singletonMap("outlineWidth",4)));assertFalse(ForegroundInkStyle.valid(Collections.singletonMap("shadowOpacity","10")));assertFalse(ForegroundInkStyle.valid(Collections.singletonMap("outlineColor","red")));assertFalse(ForegroundInkStyle.valid(Collections.singletonMap("shadowRadius",Double.NaN)));assertTrue(ForegroundInkStyle.valid(Collections.singletonMap("shadowX",-6)));}
+ @Test public void identicalConfigurationKeepsLivePolicyIdentity(){try{Map<String,Object> v=Collections.singletonMap("shadowOpacity",0);ForegroundInkStyle.set(v);ForegroundInkStyle a=ForegroundInkStyle.current;ForegroundInkStyle.set(v);assertSame(a,ForegroundInkStyle.current);}finally{ForegroundInkStyle.set(Collections.emptyMap());}}
+}
