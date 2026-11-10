@@ -6,6 +6,7 @@ import java.util.Map;
 final class IndicatorSettings {
     final boolean enabled, showUpload, showArrows, hideIdle, bits, stacked, right, edgePanelEnabled;
     final String edgePanelApps, edgePanelSide, edgePanelFolderNames;
+    final Map<String, String> edgePanelAppRules;
     final int edgePanelTextTone;
     final int interval, textSize, threshold, decimals, boot, horizontalPosition;
     final String indicatorDesign, unitLabel, unitSuffix;
@@ -44,6 +45,7 @@ final class IndicatorSettings {
         edgeHandleBlur=clamp(number(values,"edgeHandleBlur",48),0,100);
         edgePanelSide=text(values,"edgePanelSide","right");
         edgePanelApps=text(values,"edgePanelApps","");
+        edgePanelAppRules=EdgeAppRules.safe(text(values,"edgePanelAppRules",EdgeAppRules.EMPTY));
         edgePanelFolderNames=text(values,"edgePanelFolderNames","{}");
         edgePanelPosition=clamp(number(values,"edgePanelPosition",50),5,95);
         edgePanelWidth=clamp(number(values,"edgePanelWidth",260),120,360);

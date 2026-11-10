@@ -15,6 +15,7 @@ class MainActivity : FlutterActivity() {
     private var uploadBridge: UploadBridge? = null
     private var customizationBridge: CustomizationBridge? = null
     private var rootFilesBridge: RootFilesBridge? = null
+    private var appNetworkBridge: AppNetworkBridge? = null
 
     override fun onPause() {
         rootFilesBridge?.lock()
@@ -43,6 +44,7 @@ class MainActivity : FlutterActivity() {
         uploadBridge = UploadBridge(this, flutterEngine.dartExecutor.binaryMessenger)
         customizationBridge = CustomizationBridge(this, flutterEngine.dartExecutor.binaryMessenger)
         rootFilesBridge = RootFilesBridge(this, flutterEngine.dartExecutor.binaryMessenger)
+        appNetworkBridge = AppNetworkBridge(this, flutterEngine.dartExecutor.binaryMessenger)
         flutterEngine.platformViewsController.registry.registerViewFactory("remote_control/termux_terminal", NativeTerminalBridge(flutterEngine.dartExecutor.binaryMessenger))
 
         MethodChannel(
@@ -133,6 +135,8 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        appNetworkBridge?.detach()
+        appNetworkBridge = null
         rootFilesBridge?.detach()
         rootFilesBridge = null
         customizationBridge?.detach()

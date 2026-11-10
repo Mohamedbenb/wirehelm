@@ -4,7 +4,7 @@ package com.nodecockpit.customization;
 public final class FeaturePolicy {
     public static final int SCHEMA = 1;
     public static final int PROTOCOL = 1;
-    public static final int HOOK_VERSION = 182;
+    public static final int HOOK_VERSION = 190;
     public static final long SAFETY_LEASE_MS = 90000;
     public static final String GROUP = "node_cockpit_local_v1";
     public static final String ACTION_DISABLE = "com.nodecockpit.customization.DISABLE";

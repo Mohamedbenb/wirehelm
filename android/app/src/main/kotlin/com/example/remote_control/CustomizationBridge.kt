@@ -18,6 +18,7 @@ class CustomizationBridge(private val context: Context, messenger: BinaryMesseng
     private val channel = MethodChannel(messenger, "remote_control/customization")
     private val worker = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
+    private val deviceSnapshot = DeviceSnapshot(context.applicationContext)
     private var notificationPermissionResult: MethodChannel.Result? = null
     companion object { private const val NOTIFICATION_PERMISSION_REQUEST = 59173 }
     init {
@@ -44,6 +45,25 @@ class CustomizationBridge(private val context: Context, messenger: BinaryMesseng
             worker.execute {
                 try {
                     val value = when (call.method) {
+                        "buttonShortcutsStatus" -> ButtonShortcutService.status(context)
+                        "saveButtonShortcuts" -> ButtonShortcutService.save(context,
+                            requireNotNull(call.argument<String>("up")),
+                            requireNotNull(call.argument<String>("down")),
+                            requireNotNull(call.argument<Number>("holdMs")).toLong(),
+                            call.argument<Map<String, String>>("extra").orEmpty(),
+                            call.argument<Number>("torchMinutes")?.toInt() ?: 5)
+                        "startButtonShortcuts" -> ButtonShortcutService.start(context)
+                        "stopButtonShortcuts" -> ButtonShortcutService.stop(context)
+                        "buttonShortcutAccess" -> {
+                            ButtonShortcutActions.openSettings(context, requireNotNull(call.argument<String>("type")))
+                            JSONObject()
+                        }
+                        "buttonBookmarks" -> ButtonShortcutActions.bookmarks(context)
+                        "updateButtonBookmark" -> ButtonShortcutActions.updateBookmark(context,
+                            requireNotNull(call.argument<String>("id")), requireNotNull(call.argument<String>("note")))
+                        "deviceSnapshotBaseline" -> deviceSnapshot.readBaseline()
+                        "saveDeviceSnapshot" -> deviceSnapshot.saveBaseline(call.argument<Boolean>("includeModules") == true)
+                        "captureDeviceSnapshot" -> deviceSnapshot.capture(call.argument<Boolean>("includeModules") == true)
                         "cameraRingState" -> LocalCustomization.cameraRingState()
                         "notificationUndoState" -> LocalCustomization.notificationUndoState()
                         "applyNotificationUndo" -> LocalCustomization.applyNotificationUndo(call.argument<String>("config") ?: error("Missing Undo configuration"))
@@ -72,7 +92,7 @@ class CustomizationBridge(private val context: Context, messenger: BinaryMesseng
                         "installVector" -> { LocalCustomization.openVectorDownload(context); JSONObject() }
                         "installKernelSu" -> { LocalCustomization.openKernelSuDownload(context); JSONObject() }
                         "kernelSu" -> { LocalCustomization.openKernelSu(context); JSONObject() }
-                        "launcherApps" -> launcherApps()
+                        "launcherApps" -> launcherApps(call.argument<Boolean>("includeSelf") == true)
                         else -> error("Unsupported customization operation")
                     }
                     main.post { result.success(value.toString()) }

@@ -1,5 +1,8 @@
 import 'dart:async';
+import 'app_network_screen.dart';
+import 'button_shortcuts_screen.dart';
 import 'camera_ring_screen.dart';
+import 'device_snapshot_screen.dart';
 import 'notification_undo_screen.dart';
 import 'root_files_screen.dart';
 import 'dart:convert';
@@ -270,40 +273,77 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
     icon: const Icon(Icons.save_outlined),
   );
 
-  Future<void> _selectEdgeApps() async {
+  Map<String, String> _edgeAppRules() => Map<String, String>.from(
+    jsonDecode(_section('config')['edgePanelAppRules'] as String? ?? '{}')
+        as Map,
+  );
+
+  Future<void> _selectEdgeApps({
+    bool chooseContext = false,
+    String? foregroundPackage,
+    String? foregroundLabel,
+    List<Map<String, dynamic>>? catalog,
+  }) async {
     try {
-      final result = await LocalCustomization.call('launcherApps');
-      final apps = ((result['apps'] as List?) ?? [])
-          .map((e) => Map<String, dynamic>.from(e as Map))
-          .toList();
-      final current = ((_section('config')['edgePanelApps'] as String?) ?? '')
+      final apps =
+          catalog ??
+          ((await LocalCustomization.call('launcherApps', {
+                    'includeSelf': true,
+                  }))['apps'] as List)
+              .map((e) => Map<String, dynamic>.from(e as Map))
+              .toList();
+      final rules = _edgeAppRules();
+      final defaultApps = _section('config')['edgePanelApps'] as String? ?? '';
+      final current =
+          (foregroundPackage == null
+                  ? defaultApps
+                  : rules[foregroundPackage] ?? '')
           .split(RegExp('[,+]'))
-          .where((value) => value.isNotEmpty)
+          .where((value) => value.isNotEmpty && value != foregroundPackage)
           .toSet();
       final selected = Set<String>.from(current);
-      final search = TextEditingController();
+      final contextual = foregroundPackage != null;
+      final appLabels = {
+        for (final app in apps) app['package'] as String: app['label'] as String,
+      };
       var query = '';
       if (!mounted) return;
-      final save = await showDialog<bool>(
+      final choices = [
+        ...apps,
+        if (chooseContext)
+          for (final package in rules.keys)
+            if (!appLabels.containsKey(package))
+              {'package': package, 'label': package},
+      ];
+      final response = await showDialog<Object>(
         context: context,
         builder: (dialogContext) => StatefulBuilder(
           builder: (context, setDialogState) {
-            final filtered = apps.where((app) {
+            final filtered = choices.where((app) {
+              if (contextual &&
+                  (app['package'] == foregroundPackage ||
+                      selected.contains(app['package']))) {
+                return false;
+              }
               final needle = query.toLowerCase();
               return needle.isEmpty ||
                   (app['label'] as String).toLowerCase().contains(needle) ||
                   (app['package'] as String).toLowerCase().contains(needle);
             }).toList();
             return AlertDialog(
-              title: const Text('Quick-launch apps'),
+              title: Text(
+                chooseContext
+                    ? 'Choose the app you’re using'
+                    : foregroundLabel == null
+                    ? 'Favorites'
+                    : 'Shortcuts for $foregroundLabel',
+              ),
               content: SizedBox(
                 width: double.maxFinite,
                 height: 480,
                 child: Column(
                   children: [
                     TextField(
-                      controller: search,
-                      autofocus: true,
                       decoration: const InputDecoration(
                         prefixIcon: Icon(Icons.search),
                         hintText: 'Search apps',
@@ -313,21 +353,92 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
                     const SizedBox(height: 8),
                     Expanded(
                       child: ListView.builder(
-                        itemCount: filtered.length,
+                        itemCount: filtered.length + (contextual ? 1 : 0),
                         itemBuilder: (_, index) {
-                          final app = filtered[index];
+                          if (contextual && index == 0) {
+                            final theme = Theme.of(context);
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Shortcuts on this panel',
+                                    style: theme.textTheme.titleSmall,
+                                  ),
+                                  const Text(
+                                    'The app you’re using is skipped.',
+                                  ),
+                                  if (selected.isEmpty)
+                                    const Text('No shortcuts selected.')
+                                  else
+                                    Wrap(
+                                      spacing: 6,
+                                      children: [
+                                        for (final package in selected)
+                                          InputChip(
+                                            label: Text(
+                                              appLabels[package] ??
+                                                  '$package (unavailable)',
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                            onDeleted: () => setDialogState(
+                                              () => selected.remove(package),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  const SizedBox(height: 10),
+                                  Text(
+                                    'Add shortcuts',
+                                    style: theme.textTheme.titleSmall,
+                                  ),
+                                ],
+                              ),
+                            );
+                          }
+                          final app = filtered[index - (contextual ? 1 : 0)];
                           final packageName = app['package'] as String;
                           final icon = app['icon'] as String?;
+                          final graphic = icon == null || icon.isEmpty
+                              ? const Icon(Icons.apps)
+                              : Image.memory(
+                                  base64Decode(icon),
+                                  width: 40,
+                                  height: 40,
+                                  gaplessPlayback: true,
+                                );
+                          if (chooseContext) {
+                            final hasRule = rules.containsKey(packageName);
+                            return ListTile(
+                              leading: graphic,
+                              title: Text(app['label'] as String),
+                              subtitle: Text(
+                                hasRule
+                                    ? '${rules[packageName]!.split(',').length} custom shortcuts'
+                                    : packageName,
+                              ),
+                              onTap: hasRule || rules.length < 16
+                                  ? () => Navigator.pop(dialogContext, app)
+                                  : null,
+                            );
+                          }
+                          if (contextual) {
+                            return ListTile(
+                              leading: graphic,
+                              title: Text(app['label'] as String),
+                              trailing: const Icon(Icons.add),
+                              onTap: selected.length >= 12
+                                  ? null
+                                  : () => setDialogState(
+                                      () => selected.add(packageName),
+                                    ),
+                            );
+                          }
                           return CheckboxListTile(
                             value: selected.contains(packageName),
-                            secondary: icon == null || icon.isEmpty
-                                ? const Icon(Icons.apps)
-                                : Image.memory(
-                                    base64Decode(icon),
-                                    width: 40,
-                                    height: 40,
-                                    gaplessPlayback: true,
-                                  ),
+                            secondary: graphic,
                             title: Text(app['label'] as String),
                             subtitle: Text(
                               packageName,
@@ -354,20 +465,44 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
               ),
               actions: [
                 TextButton(
-                  onPressed: () => Navigator.pop(dialogContext, false),
+                  onPressed: () => Navigator.pop(dialogContext),
                   child: const Text('Cancel'),
                 ),
-                FilledButton(
-                  onPressed: () => Navigator.pop(dialogContext, true),
-                  child: const Text('Save'),
-                ),
+                if (foregroundPackage != null &&
+                    rules.containsKey(foregroundPackage))
+                  TextButton(
+                    onPressed: () => Navigator.pop(dialogContext, 'default'),
+                    child: const Text('Use Favorites'),
+                  ),
+                if (!chooseContext)
+                  FilledButton(
+                    onPressed: foregroundPackage != null && selected.isEmpty
+                        ? null
+                        : () => Navigator.pop(dialogContext, true),
+                    child: const Text('Save'),
+                  ),
               ],
             );
           },
         ),
       );
-      search.dispose();
-      if (save == true) {
+      if (!mounted) return;
+      if (response is Map<String, dynamic>) {
+        await _selectEdgeApps(
+          foregroundPackage: response['package'] as String,
+          foregroundLabel: response['label'] as String,
+          catalog: apps,
+        );
+      } else if (foregroundPackage != null &&
+          (response == true || response == 'default')) {
+        final updated = _edgeAppRules();
+        if (response == 'default') {
+          updated.remove(foregroundPackage);
+        } else {
+          updated[foregroundPackage] = selected.join(',');
+        }
+        await _apply('edgePanelAppRules', jsonEncode(updated));
+      } else if (response == true) {
         final groups = ((_section('config')['edgePanelApps'] as String?) ?? '')
             .split(',');
         final remaining = Set<String>.from(selected);
@@ -518,6 +653,70 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
       onTap: onTap,
     ),
   );
+
+  void _openUiFeatures() {
+    Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (menuContext) => Scaffold(
+          appBar: AppBar(title: const Text('UI features')),
+          body: SafeArea(
+            child: ValueListenableBuilder<int>(
+              valueListenable: _featureRevision,
+              builder: (_, _, _) => ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  _featureLink(
+                    title: 'Edge panel',
+                    subtitle: _edgePanelSummary(_data),
+                    icon: Icons.view_sidebar_outlined,
+                    onTap: () => _openFeature(
+                      'Edge panel',
+                      _edgePanelFeature,
+                      saveScope: 'edge',
+                    ),
+                  ),
+                  _featureLink(
+                    title: 'Notification ring',
+                    subtitle: 'Camera ring for pending notifications · app priorities',
+                    icon: Icons.notifications_active_outlined,
+                    onTap: () => Navigator.of(menuContext).push<void>(
+                      MaterialPageRoute(builder: (_) => const CameraRingScreen()),
+                    ),
+                  ),
+                  _featureLink(
+                    title: 'Notification Undo',
+                    subtitle: 'Undo with a button or shake · drawer and lock screen',
+                    icon: Icons.undo,
+                    onTap: () => Navigator.of(menuContext).push<void>(
+                      MaterialPageRoute(builder: (_) => const NotificationUndoScreen()),
+                    ),
+                  ),
+                  _featureLink(
+                    title: 'Screen-off buttons',
+                    subtitle: 'Assign volume gestures for when audio is idle',
+                    icon: Icons.volume_up_outlined,
+                    onTap: () => Navigator.of(menuContext).push<void>(
+                      MaterialPageRoute(builder: (_) => const ButtonShortcutsScreen()),
+                    ),
+                  ),
+                  _featureLink(
+                    title: 'Network speed',
+                    subtitle: indicatorStatus(_data),
+                    icon: Icons.speed,
+                    onTap: () => _openFeature(
+                      'Network speed',
+                      _networkSpeedFeature,
+                      saveScope: 'network',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
   Widget _tuningSlider({
     required String title,
@@ -743,6 +942,7 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
         .split(',')
         .where((value) => value.isNotEmpty)
         .length;
+    final appRuleCount = _edgeAppRules().length;
     return _card('Edge panel', [
       const SizedBox(height: 12),
       SwitchListTile(
@@ -766,12 +966,23 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
       ListTile(
         contentPadding: EdgeInsets.zero,
         leading: const Icon(Icons.apps),
-        title: const Text('Quick-launch apps'),
+        title: const Text('Favorites'),
         subtitle: Text(
           quickApps == 0 ? 'No apps selected' : '$quickApps selected',
         ),
         trailing: const Icon(Icons.add),
         onTap: _busy ? null : _selectEdgeApps,
+      ),
+      ListTile(
+        contentPadding: EdgeInsets.zero,
+        leading: const Icon(Icons.swap_horiz),
+        title: const Text('App-specific shortcuts'),
+        subtitle: Text(
+          appRuleCount == 0
+              ? 'Show different shortcuts in selected apps'
+              : '$appRuleCount of 16 app-specific lists',
+        ),
+        onTap: _busy ? null : () => _selectEdgeApps(chooseContext: true),
       ),
       _tuningSlider(
         title: 'Panel width',
@@ -1796,43 +2007,40 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
               onTap: () =>
                   _openFeature('Setup assistant', _setupAssistantFeature),
             ),
-            _featureLink(
-              title: 'Edge panel',
-              subtitle: _edgePanelSummary(_data),
-              icon: Icons.view_sidebar_outlined,
-              onTap: () => _openFeature(
-                'Edge panel',
-                _edgePanelFeature,
-                saveScope: 'edge',
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 4, 4, 10),
+              child: Text(
+                'Features',
+                style: Theme.of(context).textTheme.titleMedium,
               ),
             ),
             _featureLink(
-              title: 'Notification ring',
-              subtitle: 'Camera ring for pending notifications · app priorities',
-              icon: Icons.notifications_active_outlined,
-              onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const CameraRingScreen())),
+              title: 'UI features',
+              subtitle: 'Edge panel, notification tools and network speed',
+              icon: Icons.dashboard_customize_outlined,
+              onTap: _openUiFeatures,
             ),
             _featureLink(
-              title: 'Notification Undo',
-              subtitle: 'Undo with a button or shake · drawer and lock screen',
-              icon: Icons.undo,
-              onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const NotificationUndoScreen())),
+              title: 'App manager',
+              subtitle: 'Manage per-app network access',
+              icon: Icons.app_settings_alt_outlined,
+              onTap: () => Navigator.of(context).push<void>(
+                MaterialPageRoute(builder: (_) => const AppNetworkScreen()),
+              ),
+            ),
+            _featureLink(
+              title: 'What changed?',
+              subtitle: 'Compare your phone with a saved snapshot',
+              icon: Icons.history_outlined,
+              onTap: () => Navigator.of(context).push<void>(
+                MaterialPageRoute(builder: (_) => const DeviceSnapshotScreen()),
+              ),
             ),
             _featureLink(
               title: 'Root file explorer',
               subtitle: 'Read-only browsing · protected, temporary folder writes',
               icon: Icons.folder_outlined,
               onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const RootFilesScreen())),
-            ),
-            _featureLink(
-              title: 'Network speed',
-              subtitle: indicatorStatus(_data),
-              icon: Icons.speed,
-              onTap: () => _openFeature(
-                'Network speed',
-                _networkSpeedFeature,
-                saveScope: 'network',
-              ),
             ),
             _featureLink(
               title: 'Tunisia 5G profile',

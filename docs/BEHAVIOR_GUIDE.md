@@ -43,6 +43,10 @@ A new cosmetic revision does not require a SystemUI restart. Traffic interval co
 
 `lastGood` is saved after an active hook reports the current revision stably for more than60seconds. It is not a screenshot-backed visual certificate. Explicit failure reports for the current revision can trigger emergency disable; stale failures for a superseded revision must not disable a newer configuration.
 
+### Adding a SystemUI setting
+
+Follow the value through the Flutter control and preview, `LocalCustomization.config/save/publish/hookConfigurationBundle`, `IndicatorSettings`, and the renderer. Validate JSON types and preserve defaults for existing installs. Include the value in the applicable feature signature so unrelated surfaces skip rebuilds. Update `HOOK_VERSION` when injected SystemUI code changes.
+
 ## 3. Restarts, boot recovery, quarantine and rollback
 
 **Owners:** [BootRecoveryJobService](../android/customization/src/main/java/com/nodecockpit/customization/BootRecoveryJobService.java), `recoverMissingBootHook` / `emergency` / `rollback` in LocalCustomization, [RecoveryReceiver](../android/customization/src/main/java/com/nodecockpit/customization/RecoveryReceiver.java), root `service.sh` / [control.sh](../modules/node-cockpit-system/control.sh).
@@ -77,6 +81,8 @@ Anchored mode participates in the native icon row. Dragged mode saves a preferre
 
 An obstacle can move the indicator without modifying its saved preferred fraction. It moves back when room returns. No safe slot means temporary `statusBarCrowded` hiding; idle hiding, fullscreen/native status-bar visibility and safety suspension are separate causes.
 
+Keep the traffic counter baseline across cosmetic updates. For placement settings, `horizontalPosition` uses `-1` for anchored mode and `0..1000` for the preferred free position.
+
 **Device-observed on116/hook49:** preferred762 remained unchanged; a temporary DND icon moved effective left654 ->599, and removal returned654. Screenshot/evidence links are recorded in the handoff. No-space fallback has unit coverage; deliberate full-crowding, landscape and other-ROM cases were not phone-certified.
 
 ## 5. Edge edits: draft state versus persistence
@@ -86,6 +92,18 @@ An obstacle can move the indicator without modifying its saved preferred fractio
 **Source-checked:** editing copies app/folder state into drafts. Reordering, removals and folder changes in edit mode affect that draft; Save sends app/folder state through the UID-restricted provider, whereas Cancel exits without that save. Persistence is asynchronous and failures are reported through the edge failure handler. Closing the edit UI alone is not proof of a successful saved revision.
 
 Folder naming outside edit mode takes a different path: the text watcher calls persistence as the name changes. It is not covered by a later edit-mode Cancel. Handle placement also has its own persistence path when the drag ends. Closing/destroying a modal window discards transient editing objects; applying safety suspension is not the same action as committing an edit.
+
+The handle and panel have separate geometry and gesture state. Network-only edits should leave both windows in place. `RetiredGlassSettings` normalizes obsolete SystemUI glass settings while retaining live edge materials and search tray placement.
+
+Set up **App-specific shortcuts** under **UI features → Edge panel**. Choose an app and the shortcuts to show while using it. The editor shows **Shortcuts on this panel** above the apps you can add. The hook selects **Favorites** or **Shortcuts for [app]** before the panel opens and holds that selection for the opening. The foreground app is skipped in both lists, including inside Favorites folders. If a saved app-specific list has no usable entries, its panel shows an empty state with **Edit**. App-specific lists support adding, removing, and reordering shortcuts. Saving an empty app-specific list or selecting **Use Favorites** removes the rule.
+
+### Screen-off button shortcuts
+
+On the supported rooted Pixel, **UI features → Screen-off buttons** lets you assign a long press, double tap, triple tap, and tap-then-hold independently to each volume button. A double tap waits for the third-tap window only when both are assigned to that button. Start the monitor from the page and stop it there or from its notification. It reads the physical button device without grabbing it. Android still processes the keys, so gestures can also change volume. Playback, a screen transition, or another physical button cancels a pending volume gesture. The monitor requires a fresh start after reboot or an app update.
+
+Power supports double and triple taps starting with the screen off when Android’s own double-press shortcut is off. Normal screen wake and sleep can occur during the sequence. Wirehelm waits for a quiet gap before acting. Holding Power, pressing it with a volume button, or making four or more quick presses suppresses the Wirehelm action. Android retains its stock Power handling, including Emergency SOS.
+
+Actions include the flashlight toggle, media resume, a 1–15-minute flashlight timer, Vibrate ↔ Ring, 30 minutes of Do Not Disturb, and a timestamped bookmark with an editable local note. Timed actions require **Alarms & reminders**. Do Not Disturb also requires policy access and uses Wirehelm’s own Android rule. Android may delay alarms during idle. Stopping the monitor turns off its timed flashlight. Wirehelm’s Do Not Disturb rule expires independently.
 
 ## 6. SSH backgrounding, reconnect and terminal lifetime
 

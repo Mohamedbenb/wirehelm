@@ -142,6 +142,7 @@ public final class LocalCustomization {
             .put("edgePanelTintMode",p.getString("edgePanelTintMode","auto")).put("edgeHandleTintMode",p.getString("edgeHandleTintMode","auto"))
             .put("edgePanelSide",p.getString("edgePanelSide","right")).put("edgePanelApps",p.getString("edgePanelApps",""))
             .put("edgePanelFolderNames",p.getString("edgePanelFolderNames","{}"))
+            .put("edgePanelAppRules",p.getString("edgePanelAppRules",EdgeAppRules.EMPTY))
             .put("shadeGlassEnabled",false).put("lockGlassEnabled",false)
             .put("edgePanelNativeGlass",RetiredGlassSettings.edge(p.getString("edgePanelNativeGlass","{}"))).put("systemGlassStyle","{}")
             .put("recoveryReason", p.getString("recoveryReason", ""));
@@ -156,6 +157,8 @@ public final class LocalCustomization {
         RetiredGlassSettings.normalize(c);
         new CameraRingSettings(c.optString("cameraRing",CameraRingSettings.DEFAULT));
         new NotificationUndoSettings(c.optString("notificationUndo",NotificationUndoSettings.DEFAULT));
+        String edgeAppRules = c.has("edgePanelAppRules") ? c.getString("edgePanelAppRules") : EdgeAppRules.EMPTY;
+        EdgeAppRules.parse(edgeAppRules);
         if(c.has("edgePanelTextDurationMs")&&(!(c.opt("edgePanelTextDurationMs") instanceof Number)||c.getDouble("edgePanelTextDurationMs")!=c.getInt("edgePanelTextDurationMs")||!TextAdaptationDuration.valid(c.getInt("edgePanelTextDurationMs"))))throw new IllegalArgumentException("Invalid panel text duration");
         if(c.has("edgePanelTextTone")&&(!(c.opt("edgePanelTextTone") instanceof Number)||c.getDouble("edgePanelTextTone")!=c.getInt("edgePanelTextTone")||!TextTone.valid(c.getInt("edgePanelTextTone"))))throw new IllegalArgumentException("Invalid panel text tone");
         if(c.has("edgePanelTextAdaptation")&&!(c.opt("edgePanelTextAdaptation") instanceof Boolean))throw new IllegalArgumentException("Invalid panel text adaptation");
@@ -205,6 +208,7 @@ public final class LocalCustomization {
             .putString("edgePanelTintMode",c.optString("edgePanelTintMode","auto")).putString("edgeHandleTintMode",c.optString("edgeHandleTintMode","auto"))
             .putString("edgePanelSide",c.optString("edgePanelSide","right")).putString("edgePanelApps",c.optString("edgePanelApps",""))
             .putString("edgePanelFolderNames",c.optString("edgePanelFolderNames","{}"))
+            .putString("edgePanelAppRules",edgeAppRules)
             .putBoolean("shadeGlassEnabled",c.optBoolean("shadeGlassEnabled",false)).putBoolean("lockGlassEnabled",c.optBoolean("lockGlassEnabled",false))
             .putString("edgePanelNativeGlass",c.optString("edgePanelNativeGlass","{}")).putString("systemGlassStyle","{}")
             .putString("recoveryReason", "").commit()) throw new IOException("Cannot persist configuration");
@@ -241,6 +245,7 @@ public final class LocalCustomization {
             .putString("edgePanelTintMode",c.getString("edgePanelTintMode")).putString("edgeHandleTintMode",c.getString("edgeHandleTintMode"))
             .putString("edgePanelSide",c.getString("edgePanelSide")).putString("edgePanelApps",c.getString("edgePanelApps"))
             .putString("edgePanelFolderNames",c.getString("edgePanelFolderNames"))
+            .putString("edgePanelAppRules",c.getString("edgePanelAppRules"))
             .putBoolean("shadeGlassEnabled",c.getBoolean("shadeGlassEnabled")).putBoolean("lockGlassEnabled",c.getBoolean("lockGlassEnabled"))
             .putString("edgePanelNativeGlass",c.optString("edgePanelNativeGlass","{}")).putString("systemGlassStyle",c.getString("systemGlassStyle"))
             .putLong("safetyAt",rootSuccessElapsed).putInt("safetyBoot",rootBoot).commit()) throw new IOException("Framework rejected configuration");
@@ -270,7 +275,7 @@ public final class LocalCustomization {
     static Bundle hookConfigurationBundle() throws Exception {
         JSONObject c=hookConfiguration();
         Bundle out=new Bundle();
-        for (String key:new String[]{"notificationUndo","cameraRing","position","layout","units","indicatorDesign","unitLabel","unitSuffix","edgePanelTintMode","edgeHandleTintMode","edgePanelSide","edgePanelApps","edgePanelFolderNames","edgePanelNativeGlass","systemGlassStyle"}) out.putString(key,c.getString(key));
+        for (String key:new String[]{"notificationUndo","cameraRing","position","layout","units","indicatorDesign","unitLabel","unitSuffix","edgePanelTintMode","edgeHandleTintMode","edgePanelSide","edgePanelApps","edgePanelFolderNames","edgePanelAppRules","edgePanelNativeGlass","systemGlassStyle"}) out.putString(key,c.getString(key));
         for (String key:new String[]{"schema","interval","threshold","textSize","indicatorHeight","rateWidth","stackedTextSize","arrowScale","arrowGap","directionGap","iconGap","verticalOffset","horizontalPosition","unitGap","unitScale","decimals","edgePanelTextDurationMs","edgePanelTextTone","edgePanelPosition","edgePanelWidth","edgePanelHeight","edgePanelOpacity","edgePanelBlur","edgeHandleHeight","edgeHandleOpacity","edgeHandleBlur","safetyBoot"}) out.putInt(key,c.getInt(key));
         for (String key:new String[]{"enabled","hideIdle","showUpload","showArrows","boldValue","boldText","edgePanelTextAdaptation","edgePanelEnabled","shadeGlassEnabled","lockGlassEnabled"}) out.putBoolean(key,c.getBoolean(key));
         out.putLong("revision",c.getLong("revision")); out.putLong("safetyAt",c.getLong("safetyAt"));
@@ -354,11 +359,7 @@ public final class LocalCustomization {
             } catch (Throwable e) { xp.put("connected", false).put("error", e.toString()); }
         }
         SharedPreferences p = store(app);
-        long age = p.getInt("hookBoot",-1)==bootCount() && p.contains("hookElapsed") ? android.os.SystemClock.elapsedRealtime()-p.getLong("hookElapsed",0) : Long.MAX_VALUE;
-        JSONObject hook = new JSONObject().put("observed", p.contains("hookAt")).put("fresh", age >= 0 && age < 15000)
-            .put("ageMs", age==Long.MAX_VALUE?-1:age).put("state", p.getString("hookState", "Not observed"))
-            .put("error", p.getString("hookError", "")).put("revision", p.getLong("hookRevision", -1))
-            .put("pid", p.getInt("hookPid", 0)).put("version", p.getString("hookVersion", ""));
+        JSONObject hook = lastHookReport();
         JSONObject metrics=new JSONObject(p.getString("hookMetrics","{}"));
         hook.put("metrics",metrics);
         boolean supported = FeaturePolicy.supported(Build.VERSION.SDK_INT, Build.FINGERPRINT);
@@ -397,6 +398,47 @@ public final class LocalCustomization {
             .put("safetyLeaseRemainingMs",Math.max(0,FeaturePolicy.SAFETY_LEASE_MS-(android.os.SystemClock.elapsedRealtime()-rootSuccessElapsed)))
             .put("savedSetups",setupList(false)).put("hasPrevious", p.contains("previous")).put("hasLastGood", p.contains("lastGood"));
     }
+    public static JSONObject lastHookReport() throws Exception {
+        SharedPreferences p = store(app);
+        int boot = bootCount();
+        long age = boot >= 0 && p.getInt("hookBoot", -1) == boot && p.contains("hookElapsed")
+            ? android.os.SystemClock.elapsedRealtime() - p.getLong("hookElapsed", 0) : Long.MAX_VALUE;
+        return new JSONObject().put("observed", p.contains("hookAt")).put("fresh", age >= 0 && age < 15000)
+            .put("ageMs", age == Long.MAX_VALUE ? -1 : age).put("state", p.getString("hookState", "Not observed"))
+            .put("error", p.getString("hookError", "")).put("revision", p.getLong("hookRevision", -1))
+            .put("pid", p.getInt("hookPid", 0)).put("version", p.getString("hookVersion", ""));
+    }
+
+    public static String readRootModuleInventory() throws Exception {
+        return root("""
+            [ "$(id -u)" = 0 ] || exit 1
+            for base in /data/adb/modules /data/adb/modules_update; do
+                [ ! -L "$base" ] || exit 1
+                [ -d "$base" ] || continue
+                [ -r "$base" ] && [ -x "$base" ] || exit 1
+                for module in "$base"/*; do
+                    [ -d "$module" ] && [ ! -L "$module" ] || continue
+                    id=${module##*/}
+                    case "$id" in *[!a-zA-Z0-9_.-]*) continue ;; esac
+                    if [ "$base" = /data/adb/modules_update ]; then
+                        state='Pending update'
+                        id="$id (staged)"
+                    elif [ -f "$module/remove" ]; then state='Pending removal'
+                    elif [ -f "$module/disable" ]; then state='Disabled'
+                    else state='Enabled'
+                    fi
+                    version=
+                    prop="$module/module.prop"
+                    if [ ! -L "$prop" ] && [ -f "$prop" ]; then
+                        version=$(head -c 4096 "$prop" | sed -n 's/^version=//p' | head -n 1)
+                    fi
+                    printf 'module\\t%s\\t%s\\t%s\\n' "$id" "$state" "$version"
+                done
+            done
+            printf 'inventory complete\\n'
+            """);
+    }
+
     private static String root(String command) throws Exception {
         Process process = new ProcessBuilder("su", "-c", command).redirectErrorStream(true).start();
         ByteArrayOutputStream output = new ByteArrayOutputStream();
@@ -631,6 +673,20 @@ public final class LocalCustomization {
             while (keys.hasNext()) { String key=keys.next(); if (!FeaturePolicy.validEdgeApps(key)||parsed.getString(key).length()>40) throw new IllegalArgumentException("Invalid folder name"); }
             JSONObject current=config(app).put("edgePanelApps",apps).put("edgePanelFolderNames",parsed.toString()); save(current); publish();
             Bundle result=new Bundle(); result.putLong("revision",store(app).getLong("revision",0)); return result;
+        }
+    }
+    static Bundle applyEdgeContextApps(String pkg,String apps) throws Exception {
+        synchronized (LOCK) {
+            JSONObject current=config(app);
+            if (current.optBoolean("emergencyDisabled")) throw new IllegalStateException("Edge panel suspended");
+            String rules=EdgeAppRules.update(current.getString("edgePanelAppRules"),pkg,apps);
+            save(current.put("edgePanelAppRules",rules));
+            try { publish(); }
+            catch (Exception e) { android.util.Log.w("NodeCockpit","Remote preferences unavailable for edge shortcuts",e); }
+            app.getContentResolver().notifyChange(Uri.parse("content://com.example.remote_control.customization.health/configuration"),null);
+            Bundle result=new Bundle();
+            result.putLong("revision",store(app).getLong("revision",0));
+            return result;
         }
     }
     public static void emergency(Context context, String reason) {

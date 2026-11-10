@@ -59,10 +59,8 @@ void main() {
         'known-id',
       );
       expect(calls.any((c) => c.method == 'rollback'), false);
-      await Scrollable.ensureVisible(
-        tester.element(find.text('Network speed')),
-        alignment: .2,
-      );
+      await tester.scrollUntilVisible(find.text('UI features'), 200);
+      await tester.tap(find.text('UI features'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Network speed'));
       await tester.pumpAndSettle();

@@ -38,6 +38,11 @@ void main() {
       ]) {
         expect(find.text(title), findsNothing);
       }
+      final uiFeatures = find.text('UI features');
+      await tester.scrollUntilVisible(uiFeatures, 250);
+      expect(find.text('App manager'), findsOneWidget);
+      await tester.tap(uiFeatures);
+      await tester.pumpAndSettle();
       final link = find.text('Edge panel');
       await tester.scrollUntilVisible(link, 250);
       await tester.pumpAndSettle();

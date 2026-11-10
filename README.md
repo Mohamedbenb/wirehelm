@@ -6,8 +6,10 @@ Wirehelm combines SSH and remote device tools with optional customization for ro
 
 - SSH terminal, SFTP file transfers, saved commands, and remote desktop tools.
 - An embedded Tailscale client and an authenticated, temporary [Remote ADB relay](docs/REMOTE_ADB.md).
-- Optional Pixel customization, including a network speed indicator, an edge launcher with glass materials, a camera notification ring, and Notification Undo.
+- Optional Pixel customization, including a network speed indicator, a glass edge launcher with app-specific shortcuts, a camera notification ring, and Notification Undo.
 - A [root file explorer](docs/ROOT_FILE_EXPLORER.md) with read-only browsing by default and time-limited, folder-specific writes.
+- An [app manager](docs/APP_NETWORK.md) with live per-app network blocking on supported rooted Pixels.
+- **What changed?** compares Android builds, launchable app versions, root module state, and the reported SystemUI hook against a private on-device baseline. Module inventory is optional and requires root.
 
 SSH and SFTP work without root. Pixel customization depends on the supported SystemUI build and its module framework. The glass integration styles Wirehelm's edge panel and handle. Android owns notification, Quick Settings, brightness, and volume rendering.
 

@@ -18,6 +18,7 @@ public final class HealthProvider extends ContentProvider {
             if ("edgeSearchPlacement".equals(method)) return LocalCustomization.applyEdgeSearchPlacement(extras.getDouble("x",-1),extras.getDouble("y",-1));
             if ("edgePlacement".equals(method)) return LocalCustomization.applyEdgePlacement(extras.getInt("position",-1),extras.getString("side",""));
             if ("edgeApps".equals(method)) return LocalCustomization.applyEdgeApps(extras.getString("apps",""),extras.getString("names","{}"));
+            if ("edgeContextApps".equals(method)) return LocalCustomization.applyEdgeContextApps(extras.getString("package",""),extras.getString("apps",""));
             if (!"report".equals(method)) throw new SecurityException("Unsupported SystemUI operation");
             String state = extras.getString("state", "unknown");
             if (!java.util.Arrays.asList("loaded", "active", "disabled", "unsupported", "error", "waitingForStatusBar").contains(state)) throw new IllegalArgumentException("Invalid diagnostic state");
