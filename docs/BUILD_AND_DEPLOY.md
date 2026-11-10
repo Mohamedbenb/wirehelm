@@ -27,7 +27,7 @@ From the project root:
 .\scripts\build_update.ps1 -BuildNumber <next-code>
 ```
 
-The script packages customization backend assets, builds an ARM64 release, verifies Xposed metadata, and publishes the downloader alias plus version sidecars. Inspect the script before changing assumptions about supported architectures or output files. Historical REMOTE_UPDATES.md examples use old version numbers.
+The script packages customization backend assets, builds an ARM64 release, verifies Xposed metadata, and publishes the downloader alias plus version sidecars. See [remote updates](REMOTE_UPDATES.md) for the phone workflow.
 
 ## Known working direct Gradle build on this PC
 
@@ -50,7 +50,7 @@ Artifacts:
 
 - build/app/outputs/apk/release/app-release.apk
 - build/app/outputs/flutter-apk/node-cockpit-update.apk (the in-app downloader's normal path)
-- Node-Cockpit-<version>-build<code>.apk (reviewable named release)
+- Wirehelm-<version>-build<code>.apk (reviewable named release)
 
 Copy the verified final APK to the named release and downloader alias. If using the updater's lightweight availability check, publish its matching .apk.json sidecar as scripts/build_update.ps1 does. Avoid publishing an incomplete build.
 
@@ -94,7 +94,7 @@ Build success proves compilation/packaging, not installed state. APK verificatio
 
 ## Release record
 
-Record version, hook version, artifact paths, installation result, focused checks, actual phone evidence and remaining limits in CODEX_HANDOFF.md. Keep this guide short and update commands here when the build workflow changes.
+Record the current source build, updater build, most recent device verification and active follow-ups in CODEX_HANDOFF.md. Keep older release evidence in the archive. See [artifact retention](BUILD_ARTIFACT_RETENTION.md) before pruning generated files.
 
 ### JBR25 collector crash workaround (121)
 

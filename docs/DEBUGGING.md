@@ -18,11 +18,11 @@ Start with [code ownership](CODE_MAP.md), read the relevant [behavior sequence](
 | Reconnect differs from explicit disconnect | Behavior guide section6; lastDeviceId; terminal ownership | Unexpected loss can retain history/reconnect target; explicit disconnect clears them. Reconnect does not establish command replay or shell continuity. |
 | Transfer retry fails or leaves a partial file | Behavior guide section7; runner and queue ownership | Cooperative cancel is not immediate rollback; retrying a callback is not byte-resume. Inspect the specific runner. |
 | SSH disconnected / changed LAN address | DeviceConnectionService; SshSession; known_host_storage | Separate address discovery, transport reachability, SSH host identity and authentication. Do not silently accept a changed host key. |
-| Terminal sizing/input wrong | native_terminal.dart; NativeTerminalBridge; docs/TERMINAL_RESIZE_48.md | Preserve PTY lifecycle, native terminal sizing and session ownership. |
+| Terminal sizing/input wrong | native_terminal.dart; NativeTerminalBridge; [resize history](history/TERMINAL_RESIZE_48.md) | Preserve PTY lifecycle, native terminal sizing and session ownership. |
 
 ## Phone diagnostics
 
-Use the currently connected serial, not a historical LAN port:
+Use the currently connected serial and filter output to the package, process, or log tags involved. If a full capture is needed, save it under ignored `build/` and inspect the first actionable error with the surrounding lines. Include only the evidence needed to reproduce or verify the result.
 
 ```powershell
 adb devices -l

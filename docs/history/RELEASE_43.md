@@ -8,4 +8,4 @@
 - Restrict the dedicated relay SSH key to the receiver command, pin the Pi host key, cap audio queues and clean up owned capture/playback processes on Stop.
 - Recover from transient Windows capture failures, report capture restarts, and keep monitoring off the interactive desktop helper.
 
-Open **Audio relay** from either device's home screen. Microphone forwarding is not included in this release. See [Audio relay](AUDIO_RELAY.md) for setup and the meaning of the monitoring readings.
+Open **Audio relay** from either device's home screen. Microphone forwarding is not included in this release. See [Audio relay](../AUDIO_RELAY.md) for setup and the meaning of the monitoring readings.

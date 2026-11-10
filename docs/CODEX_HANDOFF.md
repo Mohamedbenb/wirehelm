@@ -1,18 +1,9 @@
 # Wirehelm handoff
 
-## Current source
+- **Current source and last verified Pixel installation** — Wirehelm 1.37.91, build 297. The source declares SystemUI hook 190. The last verified activation of hook 190 was on build 286.
+- **Local updater** — `node-cockpit-update.apk` serves build 296. Build 297 is available as `build/artifacts/Wirehelm-1.37.91-build297.apk` with its checksum. The separately archived 296 APK failed integrity checks. The 296 updater copy matches the recorded checksum.
+- **Photos Sources** — Background transfers were confirmed on 296. Build 297 adds settings and status in Wirehelm. The exchange with a fresh Photos process remains unverified. Photos work is on hold.
+- **Notification Undo** — Leave the Pixel’s lock-screen dismissal behavior as-is.
+- **Glass** — Keep Card Glass on the edge panel, Native Glass on the handle, and the independent engine/lab. Android owns notification, Quick Settings, brightness, and volume styling.
 
-The repository uses the Wirehelm name. Build 270 was verified on a Pixel 10 before the naming and fresh-checkout cleanup. Existing package and integration identifiers still use their original names for upgrade compatibility.
-
-The edge panel defaults to Card Glass, and the collapsed handle supports live Native Glass. Clear’s white veil and Regular’s adaptive tone each default to zero. The controls remain separate from tint strength. Android owns the rendering of notifications, Quick Settings, brightness, and volume.
-
-## Last device verification
-
-Build 270 and hook 182 were confirmed through local ADB. The hook reported a matching settings revision and zero edge failures. The panel was closed during readback, so the tint change still needs a visual check with the panel open. The logs show another SystemUI start after the installer restart, with no corresponding crash event in the available buffer.
-
-## Development references
-
-- [Build and deployment](BUILD_AND_DEPLOY.md)
-- [Feature ownership](CODE_MAP.md)
-- [Edge materials and standalone lab](GLASS_FEATURE_STATUS.md)
-- [Root file explorer](ROOT_FILE_EXPLORER.md), [notification ring](CAMERA_NOTIFICATION_RING.md), and [Notification Undo](NOTIFICATION_UNDO.md)
+Use the [code map](CODE_MAP.md) for feature ownership and [build and deployment](BUILD_AND_DEPLOY.md) for release work. See the [archived handoff](history/HANDOFF_BUILDS_274-297.md) for earlier verification evidence.
