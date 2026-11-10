@@ -22,7 +22,7 @@ try {
     $versionParts = $versionLine.Matches[0].Groups[1].Value.Split('+')
     $publishedBuild = if ($BuildNumber -gt 0) { $BuildNumber } else { [int]$versionParts[1] }
     $manifest = @{ version = $versionParts[0]; build = $publishedBuild } | ConvertTo-Json -Compress
-    foreach ($apkPath in @($updateApk, (Join-Path $outputDirectory 'app-debug.apk'))) {
+    foreach ($apkPath in @($releaseApk, $updateApk, (Join-Path $outputDirectory 'app-debug.apk'))) {
         [System.IO.File]::WriteAllText("$apkPath.json", $manifest, [System.Text.UTF8Encoding]::new($false))
     }
     Write-Output "Update ready: $updateApk"
