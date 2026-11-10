@@ -156,6 +156,22 @@ class _TailscaleScreenState extends State<TailscaleScreen>
     }
   }
 
+  Future<void> _setDebugResume(bool enabled) async {
+    setState(() {
+      _debugBusy = true;
+      _debugError = null;
+      _debugRevision++;
+    });
+    try {
+      final value = await _client.setDebugResume(enabled);
+      if (mounted) setState(() => _debug = value);
+    } on PlatformException catch (error) {
+      if (mounted) setState(() => _debugError = error.message ?? error.code);
+    } finally {
+      if (mounted) setState(() => _debugBusy = false);
+    }
+  }
+
   Widget _debugCard() {
     final enabled = _debug['enabled'] == true;
     final ip = _status?.ips.isNotEmpty == true
@@ -243,6 +259,15 @@ class _TailscaleScreenState extends State<TailscaleScreen>
               onChanged: enabled || _debugBusy
                   ? null
                   : (v) => setState(() => _temporaryRoot = v),
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Resume Remote ADB after app updates'),
+              subtitle: const Text(
+                'Reconnects an active session for the same computer until its original expiry.',
+              ),
+              value: _debug['resumeAfterUpdate'] == true,
+              onChanged: _debugBusy ? null : _setDebugResume,
             ),
             if (!_temporaryRoot && !enabled)
               const Text(

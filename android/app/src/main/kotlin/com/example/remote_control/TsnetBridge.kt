@@ -23,15 +23,27 @@ class TsnetBridge(context: Context, messenger: BinaryMessenger) {
         private val node = Tsnetbridge.newNode()
         private val workers = Executors.newCachedThreadPool()
         @Volatile private var debugSession: AdbRelaySession? = null
+        private fun session(context: Context): AdbRelaySession = synchronized(node) {
+            debugSession ?: AdbRelaySession(context.applicationContext, node, workers).also { debugSession = it }
+        }
+        internal fun resumeRemoteAdb(context: Context) {
+            val app = context.applicationContext
+            workers.execute {
+                session(app).resumeAfterUpdate {
+                    go.Seq.setContext(app)
+                    node.updateNetwork(TsnetNetworkMonitor.snapshot(app))
+                    node.start(File(app.noBackupFilesDir, "tsnet").absolutePath, "remote-control-android", "")
+                    node.waitReady(15000)
+                }
+            }
+        }
         internal fun observeRemoteAdb(context: Context, owner: Any) { TsnetNetworkMonitor.acquire(context, node, owner) }
         internal fun releaseRemoteAdb(owner: Any) { TsnetNetworkMonitor.release(owner) }
         internal fun stopRemoteAdb() { workers.execute { runCatching { debugSession?.stop() } } }
     }
 
     private val appContext = context.applicationContext
-    private val debugging = synchronized(node) {
-        debugSession ?: AdbRelaySession(appContext, node, workers).also { debugSession = it }
-    }
+    private val debugging = session(appContext)
     private val main = Handler(Looper.getMainLooper())
     private val channel = MethodChannel(messenger, "remote_control/tsnet")
     private val lanDiscovery = LanDiscovery(appContext)
@@ -75,6 +87,7 @@ class TsnetBridge(context: Context, messenger: BinaryMessenger) {
                                 ?: throw IllegalArgumentException("Missing data"), number(call, "timeoutMs", 10000))
                             "close" -> { node.closeConnection(number(call, "id")); null }
                             "debugStatus" -> debugging.status()
+                            "setDebugResume" -> debugging.setResumeAfterUpdate(call.argument<Boolean>("enabled") == true)
                             "setDebugRelayDuration" -> debugging.setDuration(number(call, "minutes"))
                             "startDebugRelay" -> debugging.start(call.argument<String>("pc") ?: "", call.argument<Boolean>("temporaryRoot") == true)
                             "stopDebugRelay" -> { debugging.stop(); null }

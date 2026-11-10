@@ -27,6 +27,11 @@
         android:label="Wirehelm"
         android:name="com.nodecockpit.customization.CustomizationApplication"
         android:icon="@mipmap/ic_launcher">
+        <receiver android:name=".AdbRelayUpdateReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.updates"

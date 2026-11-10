@@ -104,3 +104,13 @@ func TestDebugRelayRejectsInvalidPortWithoutStartingNode(t *testing.T) {
 		t.Fatal("missing status")
 	}
 }
+
+func TestDebugRelayResumeRejectsInvalidDeadlines(t *testing.T) {
+	n := NewNode()
+	defer n.Close()
+	for _, deadline := range []time.Time{time.Now().Add(-time.Second), time.Now().Add(25 * time.Hour)} {
+		if err := n.ResumeDebugRelay(5555, "100.64.0.10", 30, deadline.UnixMilli()); err == nil || err.Error() != "invalid saved ADB session deadline" {
+			t.Fatalf("unexpected resume result for %v: %v", deadline, err)
+		}
+	}
+}

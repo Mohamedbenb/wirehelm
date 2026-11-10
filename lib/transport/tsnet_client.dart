@@ -157,6 +157,13 @@ class TsnetClient {
 
   Future<void> stopDebugRelay() => _channel.invokeMethod<void>('stopDebugRelay');
 
+  Future<Map<String, dynamic>> setDebugResume(bool enabled) async {
+    final raw = await _channel.invokeMethod<String>('setDebugResume', {
+      'enabled': enabled,
+    });
+    return jsonDecode(raw!) as Map<String, dynamic>;
+  }
+
   Future<void> stop() async {
     await _channel.invokeMethod<void>('stop');
     _starting = null;

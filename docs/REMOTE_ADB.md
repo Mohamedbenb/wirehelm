@@ -14,7 +14,9 @@ The address in the connect command belongs to Wirehelm’s Tailscale node. Tailn
 
 ## Session lifecycle
 
-An active session uses a foreground service and a wake lock bounded by the session deadline. App replacement, force stop, reboot, or network loss can interrupt it. After an app update, reopen Wirehelm and start a new session. Use regular local ADB if you need to verify an update independently of the relay.
+An active session uses a foreground service and a wake lock bounded by the session deadline. Enable **Resume Remote ADB after app updates** before updating to let Wirehelm resume an active session on the same boot. It verifies the existing listener and any root guards, retains the permitted computer, and uses only the remaining time. The desktop must reconnect after the APK replacement interrupts its existing connection.
+
+An expired session stays off. If the old listener cannot be verified, reopen Wirehelm to check diagnostics and start a new session. Use regular local ADB if you need to verify an update independently of the relay.
 
 Temporary root mode installs tagged IPv4 and IPv6 ingress guards around the local listener. Cleanup restores the previous ADB state before removing those guards. If Wirehelm cannot verify cleanup, **Stop / restore** remains available to retry.
 

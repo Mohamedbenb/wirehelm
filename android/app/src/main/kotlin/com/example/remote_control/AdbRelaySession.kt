@@ -3,6 +3,8 @@ package com.example.remote_control
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
+import android.provider.Settings
 import com.remotecontrol.tsnet.tsnetbridge.Node
 import org.json.JSONObject
 import java.net.InetSocketAddress
@@ -22,6 +24,104 @@ class AdbRelaySession(context: Context, private val node: Node, private val work
     private var cleanupError: String? = null
     private var mode = ""
     private var lastProbeError = ""
+
+    companion object {
+        private const val RESUME_KEY = "updateResumeSession"
+        private const val PREFS = "temporary_adb_relay"
+        @Suppress("DEPRECATION")
+        private fun version(context: Context): Long {
+            val info = context.packageManager.getPackageInfo(context.packageName, 0)
+            return if (android.os.Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()
+        }
+        fun pendingUpdate(context: Context): Boolean {
+            val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            if (!prefs.getBoolean("resumeAfterUpdate", false)) return false
+            return runCatching {
+                val record = JSONObject(prefs.getString(RESUME_KEY, null) ?: return false)
+                record.getLong("version") < version(context)
+            }.getOrDefault(false)
+        }
+
+        fun recordResumeFailure(context: Context, error: Throwable) {
+            val details = JSONObject().put("phase", "update resume failed").put("error", error.message)
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                .remove(RESUME_KEY).putString("lastAttempt", details.toString()).commit()
+        }
+    }
+
+    private fun boot() = Settings.Global.getInt(appContext.contentResolver, Settings.Global.BOOT_COUNT, -1)
+
+    private fun rememberForUpdate(deadline: Long, elapsedDeadline: Long? = null) {
+        if (!saved.getBoolean("resumeAfterUpdate", false)) return
+        val boot = boot()
+        check(boot >= 0) { "Could not verify this boot for ADB resume" }
+        val current = JSONObject(node.debugRelayStatus())
+        val record = JSONObject().put("version", version(appContext)).put("boot", boot)
+            .put("pc", current.getString("allowedPC")).put("localPort", current.getInt("localPort"))
+            .put("root", saved.getBoolean("owned", false))
+            .put("expiresAt", deadline)
+            .put("elapsedDeadline", elapsedDeadline ?: (SystemClock.elapsedRealtime() + (deadline - System.currentTimeMillis()).coerceAtLeast(0)))
+        check(saved.edit().putString(RESUME_KEY, record.toString()).commit()) { "Could not save ADB resume state" }
+    }
+
+    @Synchronized fun setResumeAfterUpdate(enabled: Boolean): String {
+        check(saved.edit().putBoolean("resumeAfterUpdate", enabled).remove(RESUME_KEY).commit()) {
+            "Could not save the ADB resume preference"
+        }
+        val current = JSONObject(node.debugRelayStatus())
+        if (enabled && current.optBoolean("enabled")) rememberForUpdate(current.getLong("expiresAt"))
+        return status()
+    }
+
+    @Synchronized fun resumeAfterUpdate(prepareNode: () -> Unit) {
+        if (!pendingUpdate(appContext)) {
+            if (!JSONObject(node.debugRelayStatus()).optBoolean("enabled")) AdbRelayService.stop(appContext)
+            return
+        }
+        try {
+            val record = JSONObject(saved.getString(RESUME_KEY, null) ?: error("Missing ADB resume state"))
+            check(saved.edit().remove(RESUME_KEY).commit()) { "Could not consume ADB resume state" }
+            val currentBoot = boot()
+            check(currentBoot >= 0 && record.getInt("boot") == currentBoot) { "ADB resume is limited to the current boot" }
+            val elapsedDeadline = record.getLong("elapsedDeadline")
+            val deadline = record.getLong("expiresAt")
+            fun remaining() = minOf(deadline - System.currentTimeMillis(), elapsedDeadline - SystemClock.elapsedRealtime())
+            check(remaining() > 0) { "The Remote ADB session expired during the update" }
+            val port = record.getInt("localPort")
+            val temporaryRoot = record.getBoolean("root")
+            fun verifyListener() {
+                if (temporaryRoot) {
+                    val tag = saved.getString("guardTag", null) ?: error("Missing ADB firewall guard")
+                    check(saved.getBoolean("owned", false) && port == 37127 &&
+                        root("getprop ro.adb.secure").trim() == "1" &&
+                        root("getprop service.adb.listen_addrs").trim().isEmpty() &&
+                        root("getprop service.adb.tcp.port").trim() == "37127") { "ADB listener ownership changed" }
+                    for (tool in listOf("iptables", "ip6tables")) root("$tool -w 3 -C INPUT ${guardRule(tag)}")
+                } else {
+                    check(!saved.getBoolean("owned", false) && wirelessPort() == port) {
+                        "The wireless debugging listener changed during the update"
+                    }
+                }
+                check(port in 1..65535 && listening(port)) { "The previous ADB listener is unavailable" }
+            }
+            verifyListener()
+            prepareNode()
+            verifyListener()
+            val left = remaining()
+            check(left > 0) { "The Remote ADB session expired during the update" }
+            val effectiveDeadline = System.currentTimeMillis() + left
+            node.resumeDebugRelay(port.toLong(), record.getString("pc"),
+                saved.getInt("durationMinutes", 30).toLong(), effectiveDeadline)
+            mode = if (temporaryRoot) "Temporary protected local ADB" else "Existing wireless ADB"
+            rememberForUpdate(effectiveDeadline, elapsedDeadline)
+            scheduleExpiry()
+            AdbRelayService.update(appContext, effectiveDeadline)
+        } catch (error: Exception) {
+            android.util.Log.w("WirehelmAdb", "Remote ADB resume failed", error)
+            recordResumeFailure(appContext, error)
+            runCatching { stop() }.onFailure { cleanupError = it.message }
+        }
+    }
 
     @Synchronized fun start(pc: String, allowTemporaryRoot: Boolean): String {
         require(pc.isNotBlank()) { "Select the permitted PC first" }
@@ -74,13 +174,13 @@ class AdbRelaySession(context: Context, private val node: Node, private val work
                 localPort = 37127
                 mode = "Temporary protected local ADB"
             } else {
-                var port = property("service.adb.tls.port").toIntOrNull() ?: 0
-                if (port !in 1..65535) port = runCatching { root("getprop service.adb.tls.port").trim().toInt() }.getOrDefault(0)
+                val port = wirelessPort()
                 check(port in 1..65535 && listening(port)) { "No existing wireless ADB listener. Enable wireless debugging on Wi-Fi, or select temporary root mode for mobile data." }
                 localPort = port
                 mode = "Existing wireless ADB"
             }
             node.startDebugRelayWithDuration(localPort.toLong(), pc, saved.getInt("durationMinutes", 30).toLong())
+            rememberForUpdate(JSONObject(node.debugRelayStatus()).optLong("expiresAt"))
             scheduleExpiry()
             AdbRelayService.update(appContext, JSONObject(node.debugRelayStatus()).optLong("expiresAt"))
             return status()
@@ -96,7 +196,9 @@ class AdbRelaySession(context: Context, private val node: Node, private val work
     @Synchronized fun setDuration(minutes: Long): String {
         require(minutes in 5..1440) { "Session duration must be 5..1440 minutes" }
         if (JSONObject(node.debugRelayStatus()).optBoolean("enabled")) {
+            check(saved.edit().remove(RESUME_KEY).commit()) { "Cannot clear the previous ADB deadline" }
             node.setDebugRelayDuration(minutes)
+            rememberForUpdate(JSONObject(node.debugRelayStatus()).optLong("expiresAt"))
             scheduleExpiry()
             AdbRelayService.update(appContext, JSONObject(node.debugRelayStatus()).optLong("expiresAt"))
         }
@@ -122,6 +224,7 @@ class AdbRelaySession(context: Context, private val node: Node, private val work
 
     private fun stopInternal() {
         main.removeCallbacks(expiry)
+        saved.edit().remove(RESUME_KEY).commit()
         node.stopDebugRelay()
         if (saved.getBoolean("owned", false)) {
             try {
@@ -162,15 +265,22 @@ class AdbRelaySession(context: Context, private val node: Node, private val work
 
     @Synchronized fun status(): String {
         val result = JSONObject(node.debugRelayStatus())
-        if (!result.optBoolean("enabled") && saved.getBoolean("owned", false)) {
+        if (!result.optBoolean("enabled") && saved.getBoolean("owned", false) && !pendingUpdate(appContext)) {
             runCatching { stop() }.onFailure { cleanupError = it.message }
         }
         result.put("backgroundProtected", AdbRelayService.isRunning)
+        result.put("resumeAfterUpdate", saved.getBoolean("resumeAfterUpdate", false))
         result.put("mode", mode).put("temporaryRoot", saved.getBoolean("owned", false))
             .put("preferredDurationMinutes", saved.getInt("durationMinutes", 30))
         cleanupError?.let { result.put("cleanupError", it) }
         saved.getString("lastAttempt", null)?.let { runCatching { result.put("diagnostics", JSONObject(it)) } }
         return result.toString()
+    }
+
+    private fun wirelessPort(): Int {
+        val port = property("service.adb.tls.port").toIntOrNull()
+        if (port != null && port in 1..65535) return port
+        return runCatching { root("getprop service.adb.tls.port").trim().toInt() }.getOrDefault(0)
     }
 
     private fun listening(port: Int): Boolean = try {

@@ -1,6 +1,7 @@
 package com.example.remote_control
 
 import android.app.*
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
@@ -8,15 +9,19 @@ import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 
-/** Session-scoped protection. No automatic listener after process death, reboot or expiry. */
+/** Session-scoped protection with an explicit package-update resume path. */
 class AdbRelayService : Service() {
     companion object {
         private const val CHANNEL = "remote_control_adb"
         private const val ID = 4218
         private const val STOP = "com.example.remote_control.STOP_REMOTE_ADB"
+        private const val RESUME = "com.example.remote_control.RESUME_REMOTE_ADB"
         @Volatile var isRunning = false
             private set
         fun start(context: Context) { context.startForegroundService(Intent(context, AdbRelayService::class.java)) }
+        fun resume(context: Context) {
+            context.startForegroundService(Intent(context, AdbRelayService::class.java).setAction(RESUME))
+        }
         fun update(context: Context, expiresAt: Long) {
             context.startService(Intent(context, AdbRelayService::class.java).putExtra("expiresAt", expiresAt))
         }
@@ -47,6 +52,7 @@ class AdbRelayService : Service() {
             acquire(if (deadline > 0) (deadline - System.currentTimeMillis() + 20000).coerceIn(1000, 86420000) else 60000)
         }
         if (intent?.action == STOP) TsnetBridge.stopRemoteAdb()
+        if (intent?.action == RESUME) TsnetBridge.resumeRemoteAdb(this)
         return START_NOT_STICKY
     }
     override fun onDestroy() {
@@ -56,4 +62,16 @@ class AdbRelayService : Service() {
         super.onDestroy()
     }
     override fun onBind(intent: Intent?): IBinder? = null
+}
+
+class AdbRelayUpdateReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action == Intent.ACTION_MY_PACKAGE_REPLACED && AdbRelaySession.pendingUpdate(context)) {
+            runCatching { AdbRelayService.resume(context) }
+                .onFailure {
+                    AdbRelaySession.recordResumeFailure(context, it)
+                    android.util.Log.w("WirehelmAdb", "Could not start update resume", it)
+                }
+        }
+    }
 }

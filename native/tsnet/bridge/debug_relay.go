@@ -60,6 +60,23 @@ func (n *Node) StartDebugRelayWithDuration(localPort int, allowedPC string, minu
 	if err != nil {
 		return err
 	}
+	return n.startDebugRelay(localPort, allowedPC, minutes, time.Now().Add(lifetime))
+}
+
+// ResumeDebugRelay restores the remaining lifetime of an explicit session.
+func (n *Node) ResumeDebugRelay(localPort int, allowedPC string, minutes int, expiresAtMillis int64) error {
+	if _, err := debugLifetime(minutes); err != nil {
+		return err
+	}
+	now := time.Now()
+	remaining := time.UnixMilli(expiresAtMillis).Sub(now)
+	if remaining <= 0 || remaining > 24*time.Hour {
+		return errors.New("invalid saved ADB session deadline")
+	}
+	return n.startDebugRelay(localPort, allowedPC, minutes, now.Add(remaining))
+}
+
+func (n *Node) startDebugRelay(localPort int, allowedPC string, minutes int, expires time.Time) error {
 	if localPort < 1 || localPort > 65535 {
 		return errors.New("invalid local ADB port")
 	}
@@ -69,6 +86,9 @@ func (n *Node) StartDebugRelayWithDuration(localPort int, allowedPC string, minu
 	}
 	n.lifecycle.Lock()
 	defer n.lifecycle.Unlock()
+	if !time.Now().Before(expires) {
+		return errors.New("debug relay session has expired")
+	}
 	server, root, err := n.current()
 	if err != nil {
 		return err
@@ -80,7 +100,7 @@ func (n *Node) StartDebugRelayWithDuration(localPort int, allowedPC string, minu
 	}
 	ctx, cancel := context.WithCancel(root)
 	relay := &debugRelay{listener: listener, allowed: peer, localPort: localPort,
-		expires: time.Now().Add(lifetime), durationMinutes: minutes, expiryChanged: make(chan struct{}, 1), sockets: make(map[net.Conn]bool), cancel: cancel}
+		expires: expires, durationMinutes: minutes, expiryChanged: make(chan struct{}, 1), sockets: make(map[net.Conn]bool), cancel: cancel}
 	n.mu.Lock()
 	n.debug = relay
 	n.mu.Unlock()
