@@ -343,6 +343,16 @@ public final class LocalCustomization {
         if (type==TelephonyManager.NETWORK_TYPE_UNKNOWN) return "Unknown";
         return "Type "+type;
     }
+    static String photosScope() {
+        XposedService service = framework;
+        if (service == null) return "unknown";
+        try {
+            return service.getScope().contains(PhotosSourcesControl.PHOTOS) ? "enabled" : "missing";
+        } catch (Exception unavailable) {
+            return "unknown";
+        }
+    }
+
     public static JSONObject probe(boolean requestRoot) throws Exception {
         if (requestRoot) probeRoot(); else refreshSafetyNowIfNeeded();
         refreshSafetyIfNeeded();

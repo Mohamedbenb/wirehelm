@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import com.nodecockpit.customization.LocalCustomization
+import com.nodecockpit.customization.PhotosSourcesControl
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
 import org.json.JSONObject
@@ -64,6 +65,15 @@ class CustomizationBridge(private val context: Context, messenger: BinaryMesseng
                         "deviceSnapshotBaseline" -> deviceSnapshot.readBaseline()
                         "saveDeviceSnapshot" -> deviceSnapshot.saveBaseline(call.argument<Boolean>("includeModules") == true)
                         "captureDeviceSnapshot" -> deviceSnapshot.capture(call.argument<Boolean>("includeModules") == true)
+                        "photosSourcesStatus" -> PhotosSourcesControl.status(context)
+                        "savePhotosSources" -> PhotosSourcesControl.save(
+                            context, JSONObject(requireNotNull(call.argument<String>("config"))))
+                        "openGooglePhotos" -> {
+                            val intent = context.packageManager.getLaunchIntentForPackage("com.google.android.apps.photos")
+                                ?: error("Google Photos is unavailable")
+                            context.startActivity(intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+                            JSONObject()
+                        }
                         "cameraRingState" -> LocalCustomization.cameraRingState()
                         "notificationUndoState" -> LocalCustomization.notificationUndoState()
                         "applyNotificationUndo" -> LocalCustomization.applyNotificationUndo(call.argument<String>("config") ?: error("Missing Undo configuration"))

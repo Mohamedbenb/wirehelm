@@ -4,12 +4,15 @@
         <package android:name="me.weishu.kernelsu" />
         <package android:name="org.matrix.vector.manager" />
         <package android:name="org.lsposed.manager" />
+        <package android:name="com.google.android.apps.photos" />
     </queries>
     <application>
         <receiver android:name="com.nodecockpit.customization.NotificationUndoSampleReceiver" android:exported="false" />
         <provider android:name="com.nodecockpit.customization.HealthProvider"
             android:authorities="${applicationId}.customization.health"
             android:exported="true" android:directBootAware="true" />
+        <provider android:name="com.nodecockpit.customization.PhotosSourcesProvider"
+            android:authorities="${applicationId}.photos.sources" android:exported="true" />
         <receiver android:name="com.nodecockpit.customization.RecoveryReceiver"
             android:permission="android.permission.DUMP"
             android:exported="true" android:directBootAware="true">

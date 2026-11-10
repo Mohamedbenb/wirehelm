@@ -4,6 +4,7 @@ import 'button_shortcuts_screen.dart';
 import 'camera_ring_screen.dart';
 import 'device_snapshot_screen.dart';
 import 'notification_undo_screen.dart';
+import 'photos_sources_screen.dart';
 import 'root_files_screen.dart';
 import 'dart:convert';
 
@@ -2026,6 +2027,14 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
               icon: Icons.app_settings_alt_outlined,
               onTap: () => Navigator.of(context).push<void>(
                 MaterialPageRoute(builder: (_) => const AppNetworkScreen()),
+              ),
+            ),
+            _featureLink(
+              title: 'Photos Sources',
+              subtitle: 'Google Photos grouping, destinations and status',
+              icon: Icons.photo_library_outlined,
+              onTap: () => Navigator.of(context).push<void>(
+                MaterialPageRoute(builder: (_) => const PhotosSourcesScreen()),
               ),
             ),
             _featureLink(
