@@ -23,7 +23,7 @@ void main() {
     expect(r.satisfied({'provider.b'}), false);
     expect(r.satisfied({'provider.b', 'safe.config'}), true);
   });
-  test('carrier profile requires both the root backend and a supported SIM', () {
+  test('carrier profile requires the root backend and compatible vendor database', () {
     expect(
       tunisia5gFeature.requirement.satisfied({'root.carrierProfileOverride'}),
       false,
@@ -31,7 +31,7 @@ void main() {
     expect(
       tunisia5gFeature.requirement.satisfied({
         'root.carrierProfileOverride',
-        'carrier.tunisia5gSupported',
+        'carrier.compatibleDatabase',
       }),
       true,
     );

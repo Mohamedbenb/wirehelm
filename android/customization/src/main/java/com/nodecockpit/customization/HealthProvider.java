@@ -10,7 +10,7 @@ public final class HealthProvider extends ContentProvider {
         return true;
     }
     @Override public Bundle call(String method, String arg, Bundle extras) {
-        try {
+        try (ProcessWork.Token request=ProcessWork.begin("SystemUI support request")) {
             int expected = getContext().getPackageManager().getApplicationInfo("com.android.systemui", 0).uid;
             if (Binder.getCallingUid() != expected || extras == null) throw new SecurityException("SystemUI only");
             if ("wakeConfiguration".equals(method)) { LocalCustomization.refreshWakeSafety(); Bundle response=new Bundle(); response.putBundle("configuration",LocalCustomization.hookConfigurationBundle()); return response; }

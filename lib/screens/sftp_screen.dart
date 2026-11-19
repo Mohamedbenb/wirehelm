@@ -16,16 +16,34 @@ import '../ssh/ssh_session.dart';
 import '../services/download_store.dart';
 import '../services/upload_store.dart';
 
+typedef FolderListing = ({String path, List<SftpName> entries});
+
 class SftpScreen extends StatefulWidget {
   final Device device;
   final SshSession session;
   final List<Device> peerDevices;
+  final String initialPath;
+  final bool selectDirectory;
+  final bool selectFile;
+  final String? fileExtension;
+  final Future<FolderListing> Function(
+    String path, {
+    required bool fallbackToHome,
+  })?
+  readFolder;
   const SftpScreen({
     super.key,
     required this.device,
     required this.session,
     this.peerDevices = const [],
-  });
+    this.initialPath = '.',
+    this.selectDirectory = false,
+    this.selectFile = false,
+    this.fileExtension,
+    this.readFolder,
+  }) : assert(!selectDirectory || !selectFile),
+       assert(fileExtension == null || selectFile),
+       assert(readFolder == null || selectFile);
   @override
   State<SftpScreen> createState() => _SftpScreenState();
 }
@@ -38,6 +56,7 @@ class _SftpScreenState extends State<SftpScreen> {
   SftpClient? _sftp;
   List<SftpName> _entries = [];
   String _path = '.', _home = '.', _message = '';
+  String _requestedPath = '.';
   final TextEditingController _search = TextEditingController();
   bool _searching = false;
   bool _busy = false;
@@ -218,38 +237,66 @@ class _SftpScreenState extends State<SftpScreen> {
     super.initState();
     _queue.addListener(_queueChanged);
     _readFavorites();
-    _load('.');
+    _load(widget.initialPath, fallbackToHome: widget.selectFile);
   }
 
-  Future<void> _load(String path) async {
+  Future<void> _load(String path, {bool fallbackToHome = false}) async {
     setState(() {
       _busy = true;
       _message = '';
+      _requestedPath = path;
     });
     try {
       if (!widget.session.isConnected ||
           widget.session.deviceId != widget.device.id) {
         throw StateError('Connect to this device first.');
       }
-      if (_sftp == null) {
-        final opened = await _openResource(
-          widget.session.client!.sftp(),
-          (sftp) => sftp.close(),
-        );
-        if (!mounted) {
-          await opened.close();
-          return;
+      final FolderListing listing;
+      final readFolder = widget.readFolder;
+      if (readFolder != null) {
+        listing = await readFolder(path, fallbackToHome: fallbackToHome)
+            .timeout(
+              const Duration(seconds: 15),
+              onTimeout: () => throw StateError(
+                'The computer did not respond. Check its connection and retry.',
+              ),
+            );
+      } else {
+        if (_sftp == null) {
+          final opened = await _openResource(
+            widget.session.client!.sftp(),
+            (sftp) => sftp.close(),
+          );
+          if (!mounted) {
+            await opened.close();
+            return;
+          }
+          _sftp = opened;
+          _home = await opened
+              .absolute('.')
+              .timeout(const Duration(seconds: 20));
         }
-        _sftp = opened;
-        _home = await opened.absolute('.').timeout(const Duration(seconds: 20));
+        final resolved = await _sftp!
+            .absolute(path)
+            .timeout(const Duration(seconds: 20));
+        final entries = await _sftp!
+            .listdir(resolved)
+            .timeout(const Duration(seconds: 20));
+        listing = (path: resolved, entries: entries);
       }
-      final resolved = await _sftp!
-          .absolute(path)
-          .timeout(const Duration(seconds: 20));
-      final entries = await _sftp!
-          .listdir(resolved)
-          .timeout(const Duration(seconds: 20));
+      final entries = listing.entries;
       entries.removeWhere((e) => e.filename == '.' || e.filename == '..');
+      if (widget.selectDirectory) {
+        entries.removeWhere((entry) => !entry.attr.isDirectory);
+      }
+      final extension = widget.fileExtension?.toLowerCase();
+      if (extension != null) {
+        entries.removeWhere(
+          (entry) =>
+              !entry.attr.isDirectory &&
+              !entry.filename.toLowerCase().endsWith(extension),
+        );
+      }
       entries.sort(
         (a, b) => a.attr.isDirectory != b.attr.isDirectory
             ? (a.attr.isDirectory ? -1 : 1)
@@ -258,13 +305,19 @@ class _SftpScreenState extends State<SftpScreen> {
       if (mounted) {
         setState(() {
           _entries = entries;
-          _path = resolved;
+          _path = listing.path;
         });
       }
     } catch (e) {
+      if (mounted && fallbackToHome && _sftp != null && path != _home) {
+        await _load(_home);
+        return;
+      }
       if (mounted) {
         setState(() {
-          _message = 'Cannot browse files: $e';
+          _message = e is StateError
+              ? e.message
+              : 'Cannot browse files: $e';
         });
       }
     } finally {
@@ -275,6 +328,9 @@ class _SftpScreenState extends State<SftpScreen> {
       }
     }
   }
+
+  String _childPath(String name) =>
+      _path.endsWith('/') ? '$_path$name' : '$_path/$name';
 
   void _queueChanged() {
     if (mounted) setState(() {});
@@ -828,39 +884,67 @@ class _SftpScreenState extends State<SftpScreen> {
                 ),
                 onChanged: (_) => setState(() {}),
               )
-            : Text('${widget.device.name} files'),
-        actions: [
-          IconButton(
-            tooltip: 'Transfers',
-            onPressed: () => setState(() => _showTransfers = !_showTransfers),
-            icon: Badge(
-              label: Text(
-                '${_queue.items.where((t) => t.state == TransferState.queued || t.state == TransferState.running).length}',
+            : Text(
+                widget.selectDirectory
+                    ? 'Choose folder'
+                    : widget.selectFile
+                    ? widget.fileExtension == '.zip'
+                          ? 'Choose ZIP file'
+                          : 'Choose file'
+                    : '${widget.device.name} files',
               ),
-              child: const Icon(Icons.swap_vert),
+        actions: [
+          if (!widget.selectDirectory && !widget.selectFile)
+            IconButton(
+              tooltip: 'Transfers',
+              onPressed: () => setState(() => _showTransfers = !_showTransfers),
+              icon: Badge(
+                label: Text(
+                  '${_queue.items.where((t) => t.state == TransferState.queued || t.state == TransferState.running).length}',
+                ),
+                child: const Icon(Icons.swap_vert),
+              ),
             ),
-          ),
           IconButton(
             tooltip: _searching ? 'Close search' : 'Search files',
             onPressed: _toggleSearch,
             icon: Icon(_searching ? Icons.close : Icons.search),
           ),
+          if (!widget.selectDirectory && !widget.selectFile)
+            IconButton(
+              tooltip: 'Upload file',
+              onPressed: _busy || _sftp == null ? null : _upload,
+              icon: const Icon(Icons.upload_file),
+            ),
+          if (!widget.selectFile)
+            IconButton(
+              tooltip: 'New folder',
+              onPressed: _busy || _sftp == null ? null : _newFolder,
+              icon: const Icon(Icons.create_new_folder_outlined),
+            ),
           IconButton(
-            tooltip: 'Upload file',
-            onPressed: _busy || _sftp == null ? null : _upload,
-            icon: const Icon(Icons.upload_file),
-          ),
-          IconButton(
-            tooltip: 'New folder',
-            onPressed: _busy || _sftp == null ? null : _newFolder,
-            icon: const Icon(Icons.create_new_folder_outlined),
-          ),
-          IconButton(
-            onPressed: _busy ? null : () => _load(_path),
+            onPressed: _busy
+                ? null
+                : () =>
+                      _load(widget.readFolder == null ? _path : _requestedPath),
             icon: const Icon(Icons.refresh),
           ),
         ],
       ),
+      bottomNavigationBar: widget.selectDirectory
+          ? SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: FilledButton.icon(
+                  onPressed: _busy || _sftp == null || _message.isNotEmpty
+                      ? null
+                      : () => Navigator.of(context).pop(_path),
+                  icon: const Icon(Icons.folder_outlined),
+                  label: const Text('Use this folder'),
+                ),
+              ),
+            )
+          : null,
       body: SafeArea(
         child: Column(
           children: [
@@ -905,7 +989,16 @@ class _SftpScreenState extends State<SftpScreen> {
             if (_message.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.all(16),
-                child: SelectableText(_message),
+                child: Column(
+                  children: [
+                    SelectableText(_message),
+                    if (widget.readFolder != null && !_busy)
+                      TextButton(
+                        onPressed: () => _load(_requestedPath),
+                        child: const Text('Retry'),
+                      ),
+                  ],
+                ),
               ),
             Expanded(
               child: _visibleEntries.isEmpty
@@ -926,6 +1019,8 @@ class _SftpScreenState extends State<SftpScreen> {
                                 ? 'No matching files'
                                 : _busy
                                 ? 'Loading folder…'
+                                : widget.fileExtension == '.zip'
+                                ? 'No ZIP files in this folder'
                                 : 'This folder is empty',
                           ),
                         ],
@@ -947,39 +1042,45 @@ class _SftpScreenState extends State<SftpScreen> {
                           subtitle: e.attr.isDirectory
                               ? null
                               : Text(formatFileSize(e.attr.size)),
-                          trailing: PopupMenuButton<String>(
-                            enabled: !_busy,
-                            onSelected: (action) => _fileAction(e, action),
-                            itemBuilder: (_) => [
-                              if (!e.attr.isDirectory)
-                                const PopupMenuItem(
-                                  value: 'preview',
-                                  child: Text('Preview'),
+                          trailing: widget.selectDirectory || widget.selectFile
+                              ? null
+                              : PopupMenuButton<String>(
+                                  enabled: !_busy,
+                                  onSelected: (action) =>
+                                      _fileAction(e, action),
+                                  itemBuilder: (_) => [
+                                    if (!e.attr.isDirectory)
+                                      const PopupMenuItem(
+                                        value: 'preview',
+                                        child: Text('Preview'),
+                                      ),
+                                    if (!e.attr.isDirectory)
+                                      const PopupMenuItem(
+                                        value: 'download',
+                                        child: Text('Download to phone'),
+                                      ),
+                                    const PopupMenuItem(
+                                      value: 'rename',
+                                      child: Text('Rename'),
+                                    ),
+                                    const PopupMenuItem(
+                                      value: 'move',
+                                      child: Text('Move to folder'),
+                                    ),
+                                    if (!e.attr.isDirectory)
+                                      const PopupMenuItem(
+                                        value: 'copy',
+                                        child: Text('Copy to another device'),
+                                      ),
+                                  ],
                                 ),
-                              if (!e.attr.isDirectory)
-                                const PopupMenuItem(
-                                  value: 'download',
-                                  child: Text('Download to phone'),
-                                ),
-                              const PopupMenuItem(
-                                value: 'rename',
-                                child: Text('Rename'),
-                              ),
-                              const PopupMenuItem(
-                                value: 'move',
-                                child: Text('Move to folder'),
-                              ),
-                              if (!e.attr.isDirectory)
-                                const PopupMenuItem(
-                                  value: 'copy',
-                                  child: Text('Copy to another device'),
-                                ),
-                            ],
-                          ),
                           onTap: _busy
                               ? null
                               : () => e.attr.isDirectory
-                                    ? _load('$_path/${e.filename}')
+                                    ? _load(_childPath(e.filename))
+                                    : widget.selectFile
+                                    ? Navigator.of(context)
+                                          .pop(_childPath(e.filename))
                                     : _fileAction(e, 'preview'),
                         );
                       },

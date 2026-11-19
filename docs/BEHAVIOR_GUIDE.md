@@ -39,6 +39,8 @@ Build117 runtime evidence and remaining limits belong in the latest handoff entr
 
 These are separate checkpoints: local preview -> persisted app revision -> effective hook configuration -> applied view -> health acknowledgement. `applyVisual` can persist before a later publication step fails; the UI error is not evidence that nothing was saved. Conversely, an optimistic preview is not proof that the hook changed. Inspect both revisions and the actual surface before retrying. Background root collection runs outside the visual lock, but explicit safety checks and channel work can still take time.
 
+Setup detection is separate from feature compatibility. An authenticated hook report can prove that Wirehelm loaded in SystemUI even when its state is `unsupported`. After its heartbeat expires, presence is recognized only with a valid root lease, matching boot count, and the reported PID still among the current SystemUI PIDs. This evidence completes the module/scope setup checks; it does not grant activation capabilities, extend heartbeat freshness, or bypass the firmware allowlist.
+
 A new cosmetic revision does not require a SystemUI restart. Traffic interval controls counter sampling, not the collision/pre-draw update rate. "Applying settings" can reflect a stale dashboard/health snapshot; do not time rendering using that label alone. Numeric `sampleAgeMs` describes the age at report creation; combine it with report age before judging current freshness.
 
 `lastGood` is saved after an active hook reports the current revision stably for more than60seconds. It is not a screenshot-backed visual certificate. Explicit failure reports for the current revision can trigger emergency disable; stale failures for a superseded revision must not disable a newer configuration.
@@ -105,7 +107,12 @@ Power supports double and triple taps starting with the screen off when Android�
 
 Actions include the flashlight toggle, media resume, a 1–15-minute flashlight timer, Vibrate ↔ Ring, 30 minutes of Do Not Disturb, and a timestamped bookmark with an editable local note. Timed actions require **Alarms & reminders**. Do Not Disturb also requires policy access and uses Wirehelm’s own Android rule. Android may delay alarms during idle. Stopping the monitor turns off its timed flashlight. Wirehelm’s Do Not Disturb rule expires independently.
 
+The collapsed handle's Auto/Contrast adaptation is independent of the Live Native Glass switch. Its lightweight path retains local region sampling and an appearance watcher; the switch controls the rendering material. Stop sampling when the handle is removed or native shader ownership takes over, rather than simply because live glass is off.
+
 ## 6. SSH backgrounding, reconnect and terminal lifetime
+
+Build 310 adds the [30-second app screen-off policy](APP_SLEEP.md). Connected SSH and active work protect the process; a disconnected reconnect target alone does not. Process exit can discard in-memory terminal history, while saved devices and credentials remain. SystemUI is outside the shutdown scope.
+
 
 **Owners:** [DeviceLifecycleController](../lib/devices/device_lifecycle_controller.dart), [SshSession](../lib/ssh/ssh_session.dart), DeviceConnectionService and session manager.
 

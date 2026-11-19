@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'background_keep_alive.dart';
+
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/services.dart';
 
@@ -62,7 +64,7 @@ class AppUpdate {
     Stream<Uint8List> bytes,
     int size, {
     void Function(int)? onProgress,
-  }) async {
+  }) => backgroundKeepAlive.protect('app update download', () async {
     final id = await channel.invokeMethod<String>('begin', {'size': size});
     if (id == null) throw StateError('Could not create update download.');
     var received = 0;
@@ -106,7 +108,7 @@ class AppUpdate {
       } catch (_) {}
       rethrow;
     }
-  }
+  });
 
   static Future<PreparedUpdate> download(
     SshSession session,

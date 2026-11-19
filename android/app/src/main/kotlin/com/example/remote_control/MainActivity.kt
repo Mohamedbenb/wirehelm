@@ -2,6 +2,7 @@ package com.example.remote_control
 
 import android.content.Intent
 import android.os.Build
+import com.nodecockpit.customization.EdgeBuiltinShortcuts
 
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -16,6 +17,13 @@ class MainActivity : FlutterActivity() {
     private var customizationBridge: CustomizationBridge? = null
     private var rootFilesBridge: RootFilesBridge? = null
     private var appNetworkBridge: AppNetworkBridge? = null
+
+    override fun getInitialRoute():String? = EdgeBuiltinShortcuts.route(intent?.getStringExtra(EdgeBuiltinShortcuts.EXTRA)) ?: super.getInitialRoute()
+    override fun onNewIntent(intent:Intent){
+        super.onNewIntent(intent)
+        setIntent(intent)
+        EdgeBuiltinShortcuts.route(intent.getStringExtra(EdgeBuiltinShortcuts.EXTRA))?.let{flutterEngine?.navigationChannel?.pushRoute(it)}
+    }
 
     override fun onPause() {
         rootFilesBridge?.lock()
@@ -37,26 +45,29 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(
             flutterEngine
         )
-        tsnetBridge = TsnetBridge(this, flutterEngine.dartExecutor.binaryMessenger)
-        remoteAudioBridge = RemoteAudioBridge(flutterEngine.dartExecutor.binaryMessenger)
-        downloadBridge = DownloadBridge(this, flutterEngine.dartExecutor.binaryMessenger)
-        appUpdateBridge = AppUpdateBridge(this, flutterEngine.dartExecutor.binaryMessenger)
-        uploadBridge = UploadBridge(this, flutterEngine.dartExecutor.binaryMessenger)
-        customizationBridge = CustomizationBridge(this, flutterEngine.dartExecutor.binaryMessenger)
-        rootFilesBridge = RootFilesBridge(this, flutterEngine.dartExecutor.binaryMessenger)
-        appNetworkBridge = AppNetworkBridge(this, flutterEngine.dartExecutor.binaryMessenger)
-        flutterEngine.platformViewsController.registry.registerViewFactory("remote_control/termux_terminal", NativeTerminalBridge(flutterEngine.dartExecutor.binaryMessenger))
+        ScreenOffShutdown.attach(this)
+        val workMessenger = SleepAwareMessenger(flutterEngine.dartExecutor.binaryMessenger)
+        tsnetBridge = TsnetBridge(this, workMessenger)
+        remoteAudioBridge = RemoteAudioBridge(workMessenger)
+        downloadBridge = DownloadBridge(this, workMessenger)
+        appUpdateBridge = AppUpdateBridge(this, workMessenger)
+        uploadBridge = UploadBridge(this, workMessenger)
+        customizationBridge = CustomizationBridge(this, workMessenger)
+        rootFilesBridge = RootFilesBridge(this, workMessenger)
+        appNetworkBridge = AppNetworkBridge(this, workMessenger)
+        flutterEngine.platformViewsController.registry.registerViewFactory("remote_control/termux_terminal", NativeTerminalBridge(workMessenger))
 
         MethodChannel(
-            flutterEngine
-                .dartExecutor
-                .binaryMessenger,
+            workMessenger,
             CHANNEL
         ).setMethodCallHandler {
                 call,
                 result ->
 
             when (call.method) {
+                "beginWork" -> result.success(ScreenOffShutdown.beginDart(call.argument<String>("reason") ?: "active work"))
+                "endWork" -> { call.argument<Number>("token")?.toLong()?.let(ScreenOffShutdown::end); result.success(null) }
+                "sleepStatus" -> result.success(ScreenOffShutdown.status())
                 "start" -> {
                     try {
                         val intent =
@@ -135,6 +146,8 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        val cleanup = ScreenOffShutdown.begin("native engine cleanup")
+        try {
         appNetworkBridge?.detach()
         appNetworkBridge = null
         rootFilesBridge?.detach()
@@ -152,5 +165,12 @@ class MainActivity : FlutterActivity() {
         tsnetBridge?.detach()
         tsnetBridge = null
         super.cleanUpFlutterEngine(flutterEngine)
+        } finally {
+            // SSH connections and their transfer owners live in this Dart engine.
+            // Remote ADB and button services have independent native ownership.
+            stopService(Intent(this, KeepAliveService::class.java))
+            ScreenOffShutdown.detachRuntime()
+            ScreenOffShutdown.end(cleanup)
+        }
     }
 }

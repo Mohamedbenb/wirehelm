@@ -982,6 +982,7 @@ finally {
     } catch (_) {}
 
     if (wasConnected) {
+      if (manageBackgroundKeepAlive) unawaited(backgroundKeepAlive.stop());
       notifyListeners();
     }
   }

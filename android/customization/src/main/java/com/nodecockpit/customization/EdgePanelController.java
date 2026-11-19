@@ -34,6 +34,8 @@ final class EdgePanelController {
     private GestureRoot modalRoot; private LinearLayout panel; private View connector;
     private TextView title,panelCaption,placeholder; private ScrollView scroll; private GridLayout appGrid; private LinearLayout actions,bodyContent,catalog;
     private boolean wideToolbar;
+    private int toolbarWidthDp;
+    private ScrollView actionsScroll;
     private final EdgeFloatingWindows floatingWindows;
     private LinearLayout windowShelf;
     private boolean windowsMode;
@@ -124,7 +126,7 @@ final class EdgePanelController {
         if (!enabled) return;
         if (geometryChanged) { geometryUpdates++; lastChange="geometry"; updateGeometryInPlace(); }
         if (visualChanged) { visualUpdates++; lastChange="visual"; updateVisuals(false); }
-        if (contentChanged&&modalRoot!=null) { lastChange="content"; populateLaunchers(); }
+        if (contentChanged&&modalRoot!=null) { lastChange="content"; populateLaunchers(); populateActions(); layoutModal(bounds()); updateVisuals(false); }
         if (collapsedHandle==null && modalRoot==null) ensureCollapsed();
     }
     void safetyChanged(boolean allowed) {
@@ -188,7 +190,7 @@ final class EdgePanelController {
             panelForeground=windowGuard.focusedPackage();
             android.content.pm.PackageManager pm=context.getPackageManager();
             panelAppsOverride=EdgeAppRules.shortcuts(settings.edgePanelAppRules,panelForeground,
-                app -> pm.getLaunchIntentForPackage(app)!=null);
+                app -> EdgeBuiltinShortcuts.intent(pm,app)!=null);
             panelContextPackage=panelAppsOverride==null?null:panelForeground;
             GestureRoot root=new GestureRoot(context); root.setFocusableInTouchMode(true); root.setBackgroundColor(Color.TRANSPARENT);
             LinearLayout card=new LinearLayout(context); card.setOrientation(LinearLayout.VERTICAL);
@@ -236,7 +238,10 @@ final class EdgePanelController {
             card.addView(body,new LinearLayout.LayoutParams(-1,0,1f));
             View bottomRule=new View(context); LinearLayout.LayoutParams bottomRuleParams=new LinearLayout.LayoutParams(-1,dp(1)); bottomRuleParams.setMargins(0,dp(8),0,dp(6)); card.addView(bottomRule,bottomRuleParams);
             LinearLayout actionBar=new LinearLayout(context); actionBar.setOrientation(LinearLayout.VERTICAL);
-            card.addView(actionBar,new LinearLayout.LayoutParams(-1,-2));
+            actionSeparator=bottomRule;
+            actionsScroll=new ScrollView(context);actionsScroll.setFillViewport(false);actionsScroll.setVerticalScrollBarEnabled(true);actionsScroll.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
+            actionsScroll.addView(actionBar,new ScrollView.LayoutParams(-1,-2));
+            card.addView(actionsScroll,new LinearLayout.LayoutParams(-1,-2));
             View join=new View(context); join.setElevation(dp(24));
             root.addView(card); root.addView(join);
             modalRoot=root; panel=card; connector=join; title=heading; panelCaption=caption; placeholder=empty; scroll=body; appGrid=launchers; actions=actionBar; bodyContent=content;
@@ -283,9 +288,16 @@ final class EdgePanelController {
         int width=Math.min(dp(settings.edgePanelWidth),Math.round(b.width*.88f));
         if(editMode&&appTray!=null)width=Math.min(width,Math.max(dp(80),b.width-dp(164)));
         boolean singleRow=width-dp(2*PANEL_HORIZONTAL_PADDING_DP)>=dp(216);
-        if (wideToolbar!=singleRow) { wideToolbar=singleRow; populateActions(); }
+        int innerWidth=Math.max(dp(48),width-dp(2*PANEL_HORIZONTAL_PADDING_DP));
+        // The card adds the clipped radius to its width and padding; these cancel.
+        int nextToolbarWidth=EdgeActionSettings.contentWidth(Math.round(width/context.getResources().getDisplayMetrics().density),PANEL_HORIZONTAL_PADDING_DP);
+        if (wideToolbar!=singleRow||toolbarWidthDp!=nextToolbarWidth) { wideToolbar=singleRow;toolbarWidthDp=nextToolbarWidth;populateActions(); }
         int available=Math.max(dp(56),b.height-(editMode?imeHeight:0)-dp(24));
         int height=Math.min(dp(settings.edgePanelHeight),available);
+        if(actionsScroll!=null&&actions!=null){
+            actions.measure(View.MeasureSpec.makeMeasureSpec(innerWidth,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(0,View.MeasureSpec.UNSPECIFIED));
+            actionsScroll.setLayoutParams(new LinearLayout.LayoutParams(-1,Math.min(actions.getMeasuredHeight(),dp(EdgeActionSettings.toolbarHeightLimit(Math.round(height/context.getResources().getDisplayMetrics().density))))));
+        }
         int anchor=Math.round(b.height*runtimePosition/100f);
         int top=Math.max(dp(12),Math.min(available-height+dp(12),anchor-height/2));
         int connectorHeight=Math.min(dp(settings.edgeHandleHeight),height-dp(24));
@@ -369,7 +381,8 @@ private final android.graphics.Paint paint=new android.graphics.Paint(android.gr
         if(!searchMerged()&&nativeConfig.enabled&&nativeConfig.panel&&appTray!=null&&appTray.isShown()&&appTray.isAttachedToWindow()&&nativeTray==null)nativeTray=createMaterial(appTray,"search",dp(18));
         boolean nativeCard=nativePanel!=null&&nativePanel.active(),nativeGrip=nativeHandle!=null&&nativeHandle.active();
 
-        if(!nativeConfig.liveHandle){if(handleSampler!=null){handleSampler.stop();handleSampler=null;}handleGlass.setLocalBackdropLight(null);}
+        // Local contrast adaptation also belongs to the lightweight handle.
+        if(!nativeGrip&&collapsedHandle!=null&&collapsedHandle.isAttachedToWindow())startSampling(collapsedHandle);
         float handleLuma=handleSampler==null?Float.NaN:handleSampler.luminance();
         int handleOpacity=settings.edgeHandleOpacity;
         if (!Float.isNaN(handleLuma)) handleOpacity=Math.round(handleOpacity*(.65f+.35f*Math.min(1f,Math.max(0f,handleLuma)/.5f)));
@@ -391,6 +404,7 @@ private final android.graphics.Paint paint=new android.graphics.Paint(android.gr
                 int ink=settings.edgePanelTextTone>=0?TextTone.color(settings.edgePanelTextTone):0xfff8fafd;
                 for(TextView label:adaptiveLabels){
                     if(label==appSearch)appSearch.setHintTextColor(ink);
+                    if(isDescendant(label,actions)){label.setTextColor(ink);label.setShadowLayer(dp(1),0,dp(1)*.5f,Color.luminance(ink)>.179f?0x66000000:0x66ffffff);continue;}
                     if(label.getCurrentTextColor()!=ink){label.setTextColor(ink);label.setShadowLayer(dp(1),0,dp(1),Color.luminance(ink)>.179f?0x99000000:0x99ffffff);}
                     if(!nativeLabelOriginal.containsKey(label)){
                         nativeLabelOriginal.put(label,label.getBackground());
@@ -403,6 +417,8 @@ private final android.graphics.Paint paint=new android.graphics.Paint(android.gr
                 }
                 for(ImageView icon:adaptiveIcons){
                     icon.setColorFilter(ink);
+                    // Toolbar vectors need one clean stroke, not the legacy offset-copy outline.
+                    if(isDescendant(icon,actions)){if(icon.getParent() instanceof View item&&item.getBackground() instanceof android.graphics.drawable.RippleDrawable ripple)ripple.setColor(android.content.res.ColorStateList.valueOf((ink&0x00ffffff)|0x28000000));continue;}
                     if(!nativeLabelOriginal.containsKey(icon)){
                         nativeLabelOriginal.put(icon,icon.getBackground());android.graphics.drawable.GradientDrawable backing=new EdgeInkBacking(icon,icon.getBackground());backing.setCornerRadius(dp(6));nativeLabelBacking.put(icon,backing);icon.setBackground(backing);((EdgeInkBacking)backing).bind();
                     }
@@ -436,7 +452,6 @@ private final android.graphics.Paint paint=new android.graphics.Paint(android.gr
     private void onAppearanceChanged() { if (enabled) updateVisuals(true); }
     private void startSampling(View target) {
         if (target==collapsedHandle) {
-            if(!nativeConfig.liveHandle)return;
             if(nativeHandle!=null&&nativeHandle.active())return;
             if (handleSampler!=null&&handleSampler.samples(target)) return;
             if (handleSampler!=null) handleSampler.stop();
@@ -472,7 +487,7 @@ private final android.graphics.Paint paint=new android.graphics.Paint(android.gr
             if (target!=null&&target.isAttachedToWindow()) { stopSampling(target); startSampling(target); }
         } catch (Throwable error) { failures.onFailure(error); }
     }
-    private boolean needsAppearanceWatch(){return enabled&&(panel!=null&&(nativePanel==null||!nativePanel.active())||collapsedHandle!=null&&nativeConfig.liveHandle&&(nativeHandle==null||!nativeHandle.active()));}
+    private boolean needsAppearanceWatch(){return enabled&&(panel!=null&&(nativePanel==null||!nativePanel.active())||collapsedHandle!=null&&(nativeHandle==null||!nativeHandle.active()));}
     private void startAppearanceWatch(){if(!needsAppearanceWatch()){stopAppearanceWatch();return;}if(!appearanceWatching){appearanceWatching=true;lastSignalToken=Integer.MIN_VALUE;main.post(watchAppearance);}}
     private void stopAppearanceWatch(){appearanceWatching=false;main.removeCallbacks(watchAppearance);lastSignalToken=Integer.MIN_VALUE;}
     private String panelTitle(boolean editing) {
@@ -502,19 +517,19 @@ private final android.graphics.Paint paint=new android.graphics.Paint(android.gr
                 String visible=editMode?item:EdgeAppRules.visibleFavorite(item,panelForeground);
                 if (visible.isEmpty()) continue;
                 String packageName=visible.split("\\+")[0]; boolean folder=visible.contains("+");
-                android.content.Intent launch=pm.getLaunchIntentForPackage(packageName); if (launch==null) continue;
-                android.content.pm.ApplicationInfo info=pm.getApplicationInfo(packageName,0);
+                android.content.Intent launch=EdgeBuiltinShortcuts.intent(pm,packageName); if (launch==null) continue;
+                android.content.pm.ApplicationInfo info=pm.getApplicationInfo(EdgeBuiltinShortcuts.owner(packageName),0);
                 LinearLayout content=new LinearLayout(context); content.setOrientation(LinearLayout.VERTICAL); content.setGravity(Gravity.CENTER_HORIZONTAL);
                 ImageButton button=new ImageButton(context); button.setImageDrawable(pm.getApplicationIcon(info));
                 if (folder) button.setImageDrawable(folderIcon(visible));
-                button.setContentDescription(folder?folderName(item):pm.getApplicationLabel(info)); button.setBackgroundColor(Color.TRANSPARENT);
+                button.setContentDescription(folder?folderName(item):EdgeBuiltinShortcuts.label(pm,packageName)); button.setBackgroundColor(Color.TRANSPARENT);
                 button.setPadding(dp(4),dp(4),dp(4),dp(4)); button.setScaleType(ImageView.ScaleType.FIT_CENTER);
                 button.setOnClickListener(v -> {
                     if (editMode) { if (folder) showFolder(item); return; }
                     if (folder) { showFolder(item); return; }
                     launchShortcut(launch);
                 });
-                TextView appName=new TextView(context); appName.setText(folder?folderName(item):pm.getApplicationLabel(info)); appName.setTextSize(10); appName.setGravity(Gravity.CENTER);
+                TextView appName=new TextView(context); appName.setText(folder?folderName(item):EdgeBuiltinShortcuts.label(pm,packageName)); appName.setTextSize(10); appName.setGravity(Gravity.CENTER);
                 appName.setMaxLines(2); appName.setEllipsize(android.text.TextUtils.TruncateAt.END); appName.setTag(Boolean.TRUE);
                 if (title!=null) appName.setTextColor(title.getCurrentTextColor()); adaptiveLabels.add(appName);
                 content.addView(button,new LinearLayout.LayoutParams(dp(48),dp(48)));
@@ -866,15 +881,25 @@ private final android.graphics.Paint paint=new android.graphics.Paint(android.gr
             add.setContentDescription("Add window");
             addActionRow(back,add);
         } else {
-            View edit=createAction(EdgePanelIcon.Kind.EDIT,"Edit",this::enterEditMode);
-            View screenshot=createAction(EdgePanelIcon.Kind.SCREENSHOT,"Capture",this::takeScreenshot);
-            screenshot.setContentDescription("Take screenshot");
-            View settings=createAction(EdgePanelIcon.Kind.SETTINGS,"Settings",this::openSettings);
-            View windows=floatingWindows.available()
-                ?createAction(EdgePanelIcon.Kind.WINDOWS,"Windows",() -> setWindowsMode(true)):null;
-            if (wideToolbar) addActionRow(edit,windows,screenshot,settings);
-            else { addActionRow(edit,windows); addActionRow(screenshot,settings); }
+            java.util.ArrayList<View> items=new java.util.ArrayList<>();
+            for(String id:settings.edgeActions.order){
+                if(settings.edgeActions.hidden.contains(id))continue;
+                View view=null;
+                switch(id){
+                    case "edit":view=createAction(EdgePanelIcon.Kind.EDIT,"Edit",this::enterEditMode);break;
+                    case "capture":view=createAction(EdgePanelIcon.Kind.SCREENSHOT,"Capture",this::takeScreenshot);view.setContentDescription("Take screenshot");break;
+                    case "settings":view=createAction(EdgePanelIcon.Kind.SETTINGS,"Settings",this::openSettings);break;
+                    case "windows":if(floatingWindows.available())view=createAction(EdgePanelIcon.Kind.WINDOWS,"Windows",()->setWindowsMode(true));break;
+                    case "clipboard":view=createAction(EdgePanelIcon.Kind.CLIPBOARD,"Clipboard",()->{Intent launch=EdgeBuiltinShortcuts.intent(context.getPackageManager(),EdgeBuiltinShortcuts.CLIPBOARD);if(launch!=null)launchShortcut(launch);});break;
+                }
+                if(view!=null)items.add(view);
+            }
+            int columns=settings.edgeActions.columnsFor(toolbarWidthDp>0?toolbarWidthDp:EdgeActionSettings.contentWidth(settings.edgePanelWidth,PANEL_HORIZONTAL_PADDING_DP),wideToolbar);
+            for(int start=0;start<items.size();start+=columns)addActionRow(items.subList(start,Math.min(start+columns,items.size())).toArray(new View[0]));
         }
+        boolean empty=actions.getChildCount()==0;
+        if(actionsScroll!=null)actionsScroll.setVisibility(empty?View.GONE:View.VISIBLE);
+        if(actionSeparator!=null)actionSeparator.setVisibility(empty?View.GONE:View.VISIBLE);
     }
 
     private void addActionRow(View... items) {
@@ -926,6 +951,18 @@ private final android.graphics.Paint paint=new android.graphics.Paint(android.gr
         android.content.pm.PackageManager pm=context.getPackageManager(); Intent intent=new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
         java.util.HashSet<String> seen=new java.util.HashSet<>(); java.util.ArrayList<android.content.pm.ResolveInfo> matches=new java.util.ArrayList<>(pm.queryIntentActivities(intent,0));
         matches.sort((a,b) -> String.CASE_INSENSITIVE_ORDER.compare(a.loadLabel(pm).toString(),b.loadLabel(pm).toString()));
+        try {
+            String id=EdgeBuiltinShortcuts.CLIPBOARD;
+            boolean selected=java.util.Arrays.asList(android.text.TextUtils.join(",",draftApps).split("[,+]")).contains(id);
+            if(!selected&&(needle.isEmpty()||EdgeBuiltinShortcuts.LABEL.toLowerCase(Locale.ROOT).contains(needle))&&EdgeBuiltinShortcuts.intent(pm,id)!=null){
+                LinearLayout row=new LinearLayout(context);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(0,dp(4),0,dp(4));
+                ImageView icon=new ImageView(context);icon.setImageDrawable(EdgeBuiltinShortcuts.icon(pm,id));
+                TextView text=new TextView(context);text.setText(EdgeBuiltinShortcuts.LABEL);text.setTextSize(13);text.setSingleLine(true);text.setEllipsize(android.text.TextUtils.TruncateAt.END);text.setPadding(dp(8),0,0,0);text.setTextColor(0xFF10161D);adaptiveLabels.add(text);
+                row.addView(icon,new LinearLayout.LayoutParams(dp(36),dp(36)));row.addView(text,new LinearLayout.LayoutParams(0,dp(44),1f));
+                row.setOnClickListener(v->addDraftApp(id));row.setOnLongClickListener(v->{beginIconDrag(id,icon.getDrawable());return true;});
+                catalog.addView(row,new LinearLayout.LayoutParams(-1,dp(52)));
+            }
+        }catch(android.content.pm.PackageManager.NameNotFoundException ignored){}
         for (android.content.pm.ResolveInfo info:matches) {
             String pkg=info.activityInfo.packageName,label=info.loadLabel(pm).toString(); if (pkg.equals(panelContextPackage)||!seen.add(pkg)||java.util.Arrays.asList(android.text.TextUtils.join(",",draftApps).split("[,+]")).contains(pkg)||(!needle.isEmpty()&&!label.toLowerCase(Locale.ROOT).contains(needle))) continue;
             LinearLayout row=new LinearLayout(context); row.setGravity(Gravity.CENTER_VERTICAL); row.setPadding(0,dp(4),0,dp(4));
@@ -994,9 +1031,9 @@ private final android.graphics.Paint paint=new android.graphics.Paint(android.gr
         String visible=editMode?item:EdgeAppRules.visibleFavorite(item,panelForeground);
         for (String pkg:visible.split("\\+")) try {
             android.content.pm.PackageManager pm=context.getPackageManager(); LinearLayout cell=new LinearLayout(context); cell.setGravity(Gravity.CENTER_HORIZONTAL); cell.setOrientation(LinearLayout.VERTICAL);
-            ImageView icon=new ImageView(context); icon.setImageDrawable(pm.getApplicationIcon(pkg)); icon.setContentDescription(pm.getApplicationLabel(pm.getApplicationInfo(pkg,0))); cell.addView(icon,new LinearLayout.LayoutParams(dp(56),dp(56)));
+            ImageView icon=new ImageView(context); icon.setImageDrawable(EdgeBuiltinShortcuts.icon(pm,pkg)); icon.setContentDescription(EdgeBuiltinShortcuts.label(pm,pkg)); cell.addView(icon,new LinearLayout.LayoutParams(dp(56),dp(56)));
             TextView label=new TextView(context); label.setText(icon.getContentDescription()); label.setGravity(Gravity.CENTER); label.setTextSize(11); label.setTextColor(0xFF10161D); label.setMaxLines(2); cell.addView(label,new LinearLayout.LayoutParams(dp(72),dp(32)));
-            cell.setOnClickListener(v -> { if (editMode) return; try { Intent launch=pm.getLaunchIntentForPackage(pkg); if (launch!=null) { closeFolder(); launchShortcut(launch); } } catch (Throwable error) { failures.onFailure(error); } });
+            cell.setOnClickListener(v -> { if (editMode) return; try { Intent launch=EdgeBuiltinShortcuts.intent(pm,pkg); if (launch!=null) { closeFolder(); launchShortcut(launch); } } catch (Throwable error) { failures.onFailure(error); } });
             if (!windowsMode) cell.setOnLongClickListener(v -> { if (!editMode) enterEditMode(); beginIconDrag(pkg,icon.getDrawable()); closeFolder(); return true; });
             GridLayout.LayoutParams params=new GridLayout.LayoutParams(); params.width=dp(80); params.height=dp(96); grid.addView(cell,params);
         } catch (Throwable ignored) {}
@@ -1057,27 +1094,23 @@ private final android.graphics.Paint paint=new android.graphics.Paint(android.gr
         android.graphics.Canvas canvas=new android.graphics.Canvas(bitmap); android.graphics.Paint paint=new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG); paint.setColor(0xB8DDE3EA);
         canvas.drawRoundRect(0,0,size,size,dp(16),dp(16),paint); String[] members=item.split("\\+");
         for (int i=0;i<Math.min(4,members.length);i++) try {
-            android.graphics.drawable.Drawable icon=context.getPackageManager().getApplicationIcon(members[i]); int left=dp(6+(i%2)*24),top=dp(6+(i/2)*24);
+            android.graphics.drawable.Drawable icon=EdgeBuiltinShortcuts.icon(context.getPackageManager(),members[i]); int left=dp(6+(i%2)*24),top=dp(6+(i/2)*24);
             icon.setBounds(left,top,left+dp(20),top+dp(20)); icon.draw(canvas);
         } catch (Throwable ignored) {}
         return new android.graphics.drawable.BitmapDrawable(context.getResources(),bitmap);
     }
     private LinearLayout createAction(EdgePanelIcon.Kind glyph,String label,Runnable action) {
-        LinearLayout item=new LinearLayout(context);
-        item.setOrientation(LinearLayout.VERTICAL); item.setGravity(Gravity.CENTER);
-        item.setMinimumHeight(dp(48)); item.setPadding(dp(1),dp(4),dp(1),dp(4));
-        ImageView icon=new ImageView(context);
-        icon.setImageDrawable(new EdgePanelIcon(glyph));
-        adaptiveIcons.add(icon);
-        TextView text=new TextView(context);
-        text.setText(label); text.setTextSize(10); text.setMaxLines(1);
-        text.setGravity(Gravity.CENTER); text.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        adaptiveLabels.add(text);
-        item.addView(icon,new LinearLayout.LayoutParams(dp(21),dp(21)));
-        item.addView(text,new LinearLayout.LayoutParams(-1,-2));
-        selectable(item);
-        item.setContentDescription(label); item.setFocusable(true);
-        item.setOnClickListener(v -> action.run());
+        boolean labels=settings==null||editMode||windowsMode||settings.edgeActions.labels;
+        int size=settings==null?24:settings.edgeActions.iconSize;
+        LinearLayout item=new LinearLayout(context);item.setOrientation(LinearLayout.VERTICAL);item.setGravity(Gravity.CENTER);
+        item.setMinimumHeight(dp(labels?56:48));item.setPadding(dp(4),dp(6),dp(4),dp(6));
+        ImageView icon=new ImageView(context);icon.setImageDrawable(new EdgePanelIcon(glyph));icon.setScaleType(ImageView.ScaleType.FIT_CENTER);icon.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        adaptiveIcons.add(icon);LinearLayout.LayoutParams iconParams=new LinearLayout.LayoutParams(dp(size),dp(size));iconParams.bottomMargin=labels?dp(4):0;item.addView(icon,iconParams);
+        if(labels){TextView text=new TextView(context);text.setText(label);text.setTextSize(11);text.setTypeface(android.graphics.Typeface.create("sans-serif-medium",android.graphics.Typeface.NORMAL));text.setMaxLines(1);text.setGravity(Gravity.CENTER);text.setEllipsize(android.text.TextUtils.TruncateAt.END);text.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);adaptiveLabels.add(text);item.addView(text,new LinearLayout.LayoutParams(-1,-2));}
+        android.graphics.drawable.GradientDrawable mask=new android.graphics.drawable.GradientDrawable();mask.setColor(Color.WHITE);mask.setCornerRadius(dp(12));
+        item.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(((bottomInk!=0?bottomInk:title!=null?title.getCurrentTextColor():Color.WHITE)&0x00ffffff)|0x28000000),null,mask));
+        item.setContentDescription(label);item.setFocusable(true);item.setOnClickListener(v->action.run());
+        if(!editMode&&!windowsMode)item.setOnLongClickListener(v->{Intent launch=EdgeBuiltinShortcuts.actionSettingsIntent(context.getPackageManager());if(launch!=null)launchShortcut(launch);return true;});
         return item;
     }
 
@@ -1093,7 +1126,10 @@ private final android.graphics.Paint paint=new android.graphics.Paint(android.gr
         int fixed=settings!=null&&settings.edgePanelTextTone>=0?TextTone.color(settings.edgePanelTextTone):fixedPanelTextColor;
         middleInk=adaptive?middle:fixed;bottomInk=adaptive?bottom:fixed;
         for (TextView label:adaptiveLabels) if (!adaptive||!labelColors.containsKey(label)) label.setTextColor(adaptive?(label==title?top:(isDescendant(label,actions)?bottom:middle)):fixed);
-        for (ImageView icon:adaptiveIcons) icon.setColorFilter(isDescendant(icon,actions)?bottom:middle);
+        for (ImageView icon:adaptiveIcons){
+            boolean action=isDescendant(icon,actions);int ink=adaptive?(action?bottom:middle):fixed;icon.setColorFilter(ink);
+            if(action&&icon.getParent() instanceof View item&&item.getBackground() instanceof android.graphics.drawable.RippleDrawable ripple)ripple.setColor(android.content.res.ColorStateList.valueOf((ink&0x00ffffff)|0x28000000));
+        }
     }
     private boolean isDescendant(View view,ViewGroup ancestor) {
         if (view==null||ancestor==null) return false; android.view.ViewParent parent=view.getParent();
@@ -1209,7 +1245,7 @@ private final android.graphics.Paint paint=new android.graphics.Paint(android.gr
         unregisterBack();
         stopSampling(panel);
         if (modalRoot!=null) { try { windows.removeViewImmediate(modalRoot); windowRemoves++; } catch (Throwable ignored) {} }
-        modalRoot=null; modalParams=null; panel=null; connector=null; title=null; panelCaption=null; placeholder=null; scroll=null; appGrid=null; actions=null; bodyContent=null; catalog=null; appSearch=null; appTray=null; catalogScroll=null; editMode=false; draftApps.clear();
+        modalRoot=null; modalParams=null; panel=null; connector=null; title=null; panelCaption=null; placeholder=null; scroll=null; appGrid=null; actions=null; actionsScroll=null; bodyContent=null; catalog=null; appSearch=null; appTray=null; catalogScroll=null; editMode=false; draftApps.clear();
         windowShelf=null; windowsMode=false;
         panelForeground=panelContextPackage=panelAppsOverride=panelAppLabel=null;
         contextSaveInFlight=false;
@@ -1240,7 +1276,7 @@ private final android.graphics.Paint paint=new android.graphics.Paint(android.gr
             ?handleGlass.resolve(settings.edgeHandleOpacity,settings.edgeHandleBlur,settings.edgeHandleTintMode,signalView)
             :panelGlass[1].resolve(settings.edgePanelOpacity,settings.edgePanelBlur,settings.edgePanelTintMode,signalView);
         int blurCreates=handleGlass.blurCreations(),appearance=handleGlass.appearanceUpdates(); for (AdaptiveGlassEngine engine:panelGlass) { blurCreates+=engine.blurCreations(); appearance+=engine.appearanceUpdates(); }
-        return "floatingWindows="+floatingWindows.diagnostics()+",searchMerged="+searchMerged()+",guard="+windowGuard.diagnostics()+",handleLive="+nativeConfig.liveHandle+",native="+(nativePanel!=null?nativePanel.diagnostics():nativeHandle!=null?nativeHandle.diagnostics():nativeConfig.enabled?"requested":"legacy")+","+String.format(Locale.ROOT,"state=%s,progress=%.3f,creates=%d,removes=%d,rebuilds=%d,geometry=%d,visual=%d,blurCreates=%d,appearance=%d,source=%s,mode=%s,luminance=%.3f,confidence=%.2f,sampler=%s,last=%s,revision=%d",
+        return "floatingWindows="+floatingWindows.diagnostics()+",searchMerged="+searchMerged()+",guard="+windowGuard.diagnostics()+",handleLive="+nativeConfig.liveHandle+",handleSampling="+(handleSampler==null?"stopped":handleSampler.diagnostics())+",native="+(nativePanel!=null?nativePanel.diagnostics():nativeHandle!=null?nativeHandle.diagnostics():nativeConfig.enabled?"requested":"legacy")+","+String.format(Locale.ROOT,"state=%s,progress=%.3f,creates=%d,removes=%d,rebuilds=%d,geometry=%d,visual=%d,blurCreates=%d,appearance=%d,source=%s,mode=%s,luminance=%.3f,confidence=%.2f,sampler=%s,last=%s,revision=%d",
             gestureState,openProgress,windowCreates,windowRemoves,windowRebuilds,geometryUpdates,visualUpdates,blurCreates,appearance,
             s==null?panelGlass[1].lastSource():s.source,s==null?"unknown":s.mode,s==null?-1:s.luminance,s==null?0:s.confidence,
             panelSamplers[1]!=null?panelSamplers[1].diagnostics():handleSampler==null?"stopped":handleSampler.diagnostics(),lastChange,lastSettingsRevision);

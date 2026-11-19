@@ -46,6 +46,12 @@ class KeepAliveService : Service() {
         flags: Int,
         startId: Int
     ): Int {
+        // A restarted empty service cannot own an SSH transport: those live in
+        // the previous Dart process. Only an explicit runtime request keeps it.
+        if (intent == null) {
+            stopSelf(startId)
+            return START_NOT_STICKY
+        }
         val notification =
             createNotification()
 
@@ -66,7 +72,7 @@ class KeepAliveService : Service() {
             )
         }
 
-        return START_STICKY
+        return START_NOT_STICKY
     }
 
     override fun onDestroy() {
@@ -74,6 +80,7 @@ class KeepAliveService : Service() {
 
         isRunning = false
 
+        ScreenOffShutdown.changed()
         super.onDestroy()
     }
 

@@ -17,7 +17,7 @@ public final class PhotosSourcesProvider extends ContentProvider {
             throw new SecurityException("Photos only");
         }
         long identity = Binder.clearCallingIdentity();
-        try {
+        try (ProcessWork.Token request=ProcessWork.begin("Photos support request")) {
             if ("settings".equals(method)) return PhotosSourcesControl.settings(context);
             if ("status".equals(method) && extras != null) {
                 PhotosSourcesControl.report(context, extras);

@@ -8,9 +8,13 @@ import 'transport/tsnet_client.dart';
 
 import 'screens/local_customization_screen.dart';
 import 'services/app_settings.dart';
+import 'services/app_shortcut_navigation.dart';
+import 'screens/clipboard_shelf_screen.dart';
+import 'screens/edge_actions_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  appShortcutNavigation.attach();
 
   LicenseRegistry.addLicense(() async* {
     yield LicenseEntryWithLineBreaks([
@@ -146,6 +150,12 @@ class RemoteControlApp extends StatelessWidget {
 
           darkTheme: _buildTheme(brightness: Brightness.dark, accent: accent),
 
+          navigatorKey: appShortcutNavigation.key,
+          navigatorObservers: [appShortcutNavigation.observer],
+          routes: {
+            clipboardShelfRoute: (_) => const ClipboardShelfScreen(),
+            edgeActionsRoute: (_) => const EdgeActionsScreen(),
+          },
           home: const LocalCustomizationScreen(),
         );
       },

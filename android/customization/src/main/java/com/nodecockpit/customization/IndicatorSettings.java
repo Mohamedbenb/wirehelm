@@ -7,6 +7,8 @@ final class IndicatorSettings {
     final boolean enabled, showUpload, showArrows, hideIdle, bits, stacked, right, edgePanelEnabled;
     final String edgePanelApps, edgePanelSide, edgePanelFolderNames;
     final Map<String, String> edgePanelAppRules;
+    final String edgePanelActionsRaw;
+    final EdgeActionSettings edgeActions;
     final int edgePanelTextTone;
     final int interval, textSize, threshold, decimals, boot, horizontalPosition;
     final String indicatorDesign, unitLabel, unitSuffix;
@@ -47,6 +49,7 @@ final class IndicatorSettings {
         edgePanelApps=text(values,"edgePanelApps","");
         edgePanelAppRules=EdgeAppRules.safe(text(values,"edgePanelAppRules",EdgeAppRules.EMPTY));
         edgePanelFolderNames=text(values,"edgePanelFolderNames","{}");
+        edgePanelActionsRaw=text(values,"edgePanelActions",EdgeActionSettings.DEFAULT);edgeActions=EdgeActionSettings.safe(edgePanelActionsRaw);
         edgePanelPosition=clamp(number(values,"edgePanelPosition",50),5,95);
         edgePanelWidth=clamp(number(values,"edgePanelWidth",260),120,360);
         edgePanelHeight=clamp(number(values,"edgePanelHeight",520),240,720);
@@ -78,7 +81,7 @@ final class IndicatorSettings {
     String functionalSignature() { return enabled+":"+edgePanelEnabled; }
     String edgeGeometrySignature() { return edgePanelPosition+":"+edgePanelWidth+":"+edgePanelHeight+":"+edgeHandleHeight+":"+edgePanelSide; }
     String edgeVisualSignature() { return edgePanelNativeGlass+":"+edgePanelTextTone+":"+edgePanelTintMode+":"+edgeHandleTintMode+":"+edgePanelTextAdaptation+":"+edgePanelTextDurationMs+":"+edgePanelOpacity+":"+edgePanelBlur+":"+edgeHandleOpacity+":"+edgeHandleBlur; }
-    String edgeContentSignature() { return edgePanelApps+":"+edgePanelFolderNames; }
+    String edgeContentSignature() { return edgePanelApps+":"+edgePanelFolderNames+":"+edgePanelActionsRaw; }
     String safetySignature() { return boot+":"+safetyAt; }
     static int clamp(int n,int min,int max) { return Math.max(min,Math.min(max,n)); }
     private static int number(Map<String,?> m,String k,int d) { Object v=m.get(k); return v instanceof Number ? ((Number)v).intValue():d; }

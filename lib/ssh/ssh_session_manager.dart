@@ -52,27 +52,9 @@ class SshSessionManager
           )
           .length;
 
-  //
-  // Keep the Android foreground service alive
-  // when:
-  //
-  // 1. at least one SSH session is connected
-  //
-  // OR
-  //
-  // 2. a session was unexpectedly lost and
-  //    still has a reconnect target.
-  //
-  // Explicit disconnect() clears lastDeviceId,
-  // so it will no longer keep the service alive.
-  //
-  bool get _needsBackgroundKeepAlive =>
-      _sessions.values.any(
-        (session) =>
-            session.isConnected ||
-            session.lastDeviceId !=
-                null,
-      );
+  // Connected sessions need the service; saved reconnect targets alone do not.
+  // Connection attempts and transfers claim their own bounded work protection.
+  bool get _needsBackgroundKeepAlive => hasConnections;
 
   bool contains(
     String deviceId,

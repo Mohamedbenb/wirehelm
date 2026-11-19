@@ -1,5 +1,7 @@
 import 'dart:typed_data';
 
+import '../services/background_keep_alive.dart';
+
 import 'package:dartssh2/dartssh2.dart';
 
 import '../models/device.dart';
@@ -86,7 +88,7 @@ class DeviceConnectionService {
     //
     SshSession? targetSession,
     Future<void> Function(String host)? onLocalHostFound,
-  }) async {
+  }) => backgroundKeepAlive.protect('SSH connection', () async {
     final session = targetSession ?? sshSession;
     final connectClock = Stopwatch()..start();
     SSHSocket? socket;
@@ -252,7 +254,7 @@ class DeviceConnectionService {
 
       rethrow;
     }
-  }
+  });
 
   Future<SSHClient> _createPasswordClient({
     required SSHSocket socket,

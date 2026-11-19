@@ -11,7 +11,7 @@ python scripts/package_customization.py
 flutter build apk --debug
 ```
 
-The generated tsnet AAR and root module ZIPs are local build outputs. A fresh checkout builds the standard recovery backend without the optional vendor carrier database. If you have the supported database locally, the packager checks its hash and SQLite integrity before including it.
+The generated tsnet AAR, carrier patcher DEX and root module ZIPs are local build outputs. The carrier backend packages code only and derives its database from the target firmware on the phone. No vendor database is needed in the checkout. See [carrier override](CARRIER_OVERRIDE.md) for compatibility and local fixture checks.
 
 Wirehelm retains the Android application ID and updater compatibility of Node Cockpit. Updating an installed copy still requires the original signing certificate.
 

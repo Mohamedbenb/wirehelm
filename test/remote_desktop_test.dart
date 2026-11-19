@@ -27,7 +27,7 @@ void main() {
     'Windows stream captures the signed-in desktop and has bounded cleanup',
     () {
       expect(windowsDesktopWorkerScript, contains('CopyFromScreen'));
-      expect(windowsDesktopWorkerScript, contains('SetCursorPos'));
+      expect(windowsDesktopWorkerScript, contains('SendInput'));
       expect(windowsDesktopWorkerScript, contains('GetCursorPos'));
       expect(windowsDesktopWorkerScript, contains('GetCursorInfo'));
       expect(windowsDesktopWorkerScript, contains('DrawIconEx'));

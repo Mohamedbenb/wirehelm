@@ -411,6 +411,7 @@ class ButtonShortcutService : Service() {
             process = null
         }
         reader.shutdownNow()
+        ScreenOffShutdown.changed()
         super.onDestroy()
     }
 

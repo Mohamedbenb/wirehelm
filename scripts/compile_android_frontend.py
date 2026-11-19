@@ -17,6 +17,7 @@ def main():
     parser.add_argument('--flutter-root', type=Path, default=Path('C:/flutter'))
     parser.add_argument('--native-assets', type=Path, required=True)
     parser.add_argument('--output-prefix', default='build/android-release')
+    parser.add_argument('--serial-gc', action='store_true', help='Disable concurrent frontend GC on unstable Windows hosts')
     args = parser.parse_args()
     project = Path(__file__).resolve().parent.parent
     sdk = args.flutter_root.resolve()
@@ -54,6 +55,8 @@ def main():
         '--native-assets', str(native_assets), '--verbosity=error',
         str(project / 'lib/main.dart'),
     ]
+    if args.serial_gc:
+        command[1:1] = ['--no-concurrent-mark', '--no-concurrent-sweep', '--marker-tasks=1', '--scavenger-tasks=1']
     subprocess.run(command, cwd=project, check=True)
     dependencies = depfile.read_text(encoding='utf-8').replace('\\\\', '/')
     if 'dart_plugin_registrant.dart' not in dependencies or 'shared_preferences_android' not in dependencies:

@@ -6,6 +6,18 @@ public class FeaturePolicyTest {
         assertTrue(FeaturePolicy.supported(37, FeaturePolicy.TESTED_FINGERPRINT));
         assertFalse(FeaturePolicy.supported(36, FeaturePolicy.TESTED_FINGERPRINT));
         assertFalse(FeaturePolicy.supported(37, "unknown/OTA"));
+        assertTrue(FeaturePolicy.supported(37, FeaturePolicy.CP4A_FINGERPRINT));
+        assertFalse(FeaturePolicy.supported(36, FeaturePolicy.CP4A_FINGERPRINT));
+        assertFalse(FeaturePolicy.supported(37, FeaturePolicy.CP4A_FINGERPRINT.replace("16581829", "16581830")));
+        assertFalse(FeaturePolicy.supported(37, null));
+    }
+    @Test public void hookPresenceRequiresTheReportedProcessInTheSameBoot() {
+        assertTrue(FeaturePolicy.reportedProcessRunning(54,54,3196,"3196 4400"));
+        assertFalse(FeaturePolicy.reportedProcessRunning(54,53,3196,"3196"));
+        assertFalse(FeaturePolicy.reportedProcessRunning(54,54,3196,"13196 4400"));
+        assertFalse(FeaturePolicy.reportedProcessRunning(54,54,3196,"4400"));
+        assertFalse(FeaturePolicy.reportedProcessRunning(54,54,0,"0"));
+        assertFalse(FeaturePolicy.reportedProcessRunning(-1,-1,3196,"3196"));
     }
     @Test public void boundedConfigurationRejectsUnsafePollingAndSizes() {
         assertTrue(FeaturePolicy.valid(1000,1,10));

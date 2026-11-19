@@ -57,10 +57,10 @@ const edgePanelFeature = LocalFeatureDefinition(
 
 const tunisia5gFeature = LocalFeatureDefinition(
   'carrier.tunisia5g',
-  'Tunisia 5G profile',
+  'Carrier profile override',
   AllOf([
     Capability('root.carrierProfileOverride'),
-    Capability('carrier.tunisia5gSupported'),
+    Capability('carrier.compatibleDatabase'),
   ]),
 );
 

@@ -37,6 +37,7 @@ public final class NetworkSpeedModule extends XposedModule {
     private long quarantineRevision = -1;
     private boolean hookInstalled;
     private CameraNotificationRing cameraRing;
+    private ClipboardShelfObserver clipboardShelf;
     private NotificationUndoController notificationUndo;
     private Object notificationUndoCollection;
     private boolean notificationUndoHooksReady;
@@ -314,6 +315,7 @@ public final class NetworkSpeedModule extends XposedModule {
         if(notificationUndo!=null&&settings!=null)notificationUndo.configure(settings.notificationUndo,settings.revision);
         if (!started) {
             started=true;
+            try { clipboardShelf=new ClipboardShelfObserver(context); } catch(Throwable ignored) {}
             android.os.PowerManager power=(android.os.PowerManager)context.getSystemService(Context.POWER_SERVICE);
             screenInteractive=power==null||power.isInteractive();
             try { context.getContentResolver().registerContentObserver(Uri.parse("content://com.example.remote_control.customization.health/configuration"),false,

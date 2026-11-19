@@ -23,7 +23,6 @@ public final class LocalCustomization {
     public static final String MODULE = "/data/adb/modules/node_cockpit_system";
     public static final String CARRIER_MODULE = "/data/adb/modules/tn_5g_cfgdb_wildcard";
     private static final String CARRIER_ASSET = "node-cockpit-carrier";
-    private static final String CARRIER_DB_HASH = "17faf3c27a4f8939f712eb280118e2b15fdef3ea7564ac921535cfcb1c1c3a6e";
     private static volatile XposedService framework;
     private static volatile String frameworkError = "Not connected: enable Node Cockpit in the Xposed manager";
     private static Context app;
@@ -142,6 +141,7 @@ public final class LocalCustomization {
             .put("edgePanelTintMode",p.getString("edgePanelTintMode","auto")).put("edgeHandleTintMode",p.getString("edgeHandleTintMode","auto"))
             .put("edgePanelSide",p.getString("edgePanelSide","right")).put("edgePanelApps",p.getString("edgePanelApps",""))
             .put("edgePanelFolderNames",p.getString("edgePanelFolderNames","{}"))
+            .put("edgePanelActions",p.getString("edgePanelActions",EdgeActionSettings.DEFAULT))
             .put("edgePanelAppRules",p.getString("edgePanelAppRules",EdgeAppRules.EMPTY))
             .put("shadeGlassEnabled",false).put("lockGlassEnabled",false)
             .put("edgePanelNativeGlass",RetiredGlassSettings.edge(p.getString("edgePanelNativeGlass","{}"))).put("systemGlassStyle","{}")
@@ -159,6 +159,7 @@ public final class LocalCustomization {
         new NotificationUndoSettings(c.optString("notificationUndo",NotificationUndoSettings.DEFAULT));
         String edgeAppRules = c.has("edgePanelAppRules") ? c.getString("edgePanelAppRules") : EdgeAppRules.EMPTY;
         EdgeAppRules.parse(edgeAppRules);
+        new EdgeActionSettings(c.optString("edgePanelActions",EdgeActionSettings.DEFAULT));
         if(c.has("edgePanelTextDurationMs")&&(!(c.opt("edgePanelTextDurationMs") instanceof Number)||c.getDouble("edgePanelTextDurationMs")!=c.getInt("edgePanelTextDurationMs")||!TextAdaptationDuration.valid(c.getInt("edgePanelTextDurationMs"))))throw new IllegalArgumentException("Invalid panel text duration");
         if(c.has("edgePanelTextTone")&&(!(c.opt("edgePanelTextTone") instanceof Number)||c.getDouble("edgePanelTextTone")!=c.getInt("edgePanelTextTone")||!TextTone.valid(c.getInt("edgePanelTextTone"))))throw new IllegalArgumentException("Invalid panel text tone");
         if(c.has("edgePanelTextAdaptation")&&!(c.opt("edgePanelTextAdaptation") instanceof Boolean))throw new IllegalArgumentException("Invalid panel text adaptation");
@@ -208,6 +209,7 @@ public final class LocalCustomization {
             .putString("edgePanelTintMode",c.optString("edgePanelTintMode","auto")).putString("edgeHandleTintMode",c.optString("edgeHandleTintMode","auto"))
             .putString("edgePanelSide",c.optString("edgePanelSide","right")).putString("edgePanelApps",c.optString("edgePanelApps",""))
             .putString("edgePanelFolderNames",c.optString("edgePanelFolderNames","{}"))
+            .putString("edgePanelActions",c.optString("edgePanelActions",EdgeActionSettings.DEFAULT))
             .putString("edgePanelAppRules",edgeAppRules)
             .putBoolean("shadeGlassEnabled",c.optBoolean("shadeGlassEnabled",false)).putBoolean("lockGlassEnabled",c.optBoolean("lockGlassEnabled",false))
             .putString("edgePanelNativeGlass",c.optString("edgePanelNativeGlass","{}")).putString("systemGlassStyle","{}")
@@ -245,6 +247,7 @@ public final class LocalCustomization {
             .putString("edgePanelTintMode",c.getString("edgePanelTintMode")).putString("edgeHandleTintMode",c.getString("edgeHandleTintMode"))
             .putString("edgePanelSide",c.getString("edgePanelSide")).putString("edgePanelApps",c.getString("edgePanelApps"))
             .putString("edgePanelFolderNames",c.getString("edgePanelFolderNames"))
+            .putString("edgePanelActions",c.optString("edgePanelActions",EdgeActionSettings.DEFAULT))
             .putString("edgePanelAppRules",c.getString("edgePanelAppRules"))
             .putBoolean("shadeGlassEnabled",c.getBoolean("shadeGlassEnabled")).putBoolean("lockGlassEnabled",c.getBoolean("lockGlassEnabled"))
             .putString("edgePanelNativeGlass",c.optString("edgePanelNativeGlass","{}")).putString("systemGlassStyle",c.getString("systemGlassStyle"))
@@ -275,7 +278,7 @@ public final class LocalCustomization {
     static Bundle hookConfigurationBundle() throws Exception {
         JSONObject c=hookConfiguration();
         Bundle out=new Bundle();
-        for (String key:new String[]{"notificationUndo","cameraRing","position","layout","units","indicatorDesign","unitLabel","unitSuffix","edgePanelTintMode","edgeHandleTintMode","edgePanelSide","edgePanelApps","edgePanelFolderNames","edgePanelAppRules","edgePanelNativeGlass","systemGlassStyle"}) out.putString(key,c.getString(key));
+        for (String key:new String[]{"notificationUndo","cameraRing","position","layout","units","indicatorDesign","unitLabel","unitSuffix","edgePanelTintMode","edgeHandleTintMode","edgePanelSide","edgePanelApps","edgePanelFolderNames","edgePanelActions","edgePanelAppRules","edgePanelNativeGlass","systemGlassStyle"}) out.putString(key,c.getString(key));
         for (String key:new String[]{"schema","interval","threshold","textSize","indicatorHeight","rateWidth","stackedTextSize","arrowScale","arrowGap","directionGap","iconGap","verticalOffset","horizontalPosition","unitGap","unitScale","decimals","edgePanelTextDurationMs","edgePanelTextTone","edgePanelPosition","edgePanelWidth","edgePanelHeight","edgePanelOpacity","edgePanelBlur","edgeHandleHeight","edgeHandleOpacity","edgeHandleBlur","safetyBoot"}) out.putInt(key,c.getInt(key));
         for (String key:new String[]{"enabled","hideIdle","showUpload","showArrows","boldValue","boldText","edgePanelTextAdaptation","edgePanelEnabled","shadeGlassEnabled","lockGlassEnabled"}) out.putBoolean(key,c.getBoolean(key));
         out.putLong("revision",c.getLong("revision")); out.putLong("safetyAt",c.getLong("safetyAt"));
@@ -312,29 +315,32 @@ public final class LocalCustomization {
             dataType=tm.getDataNetworkType();
         } catch (SecurityException e) { out.put("telephonyWarning","Android restricted detailed telephony state"); }
         org.json.JSONArray sims=new org.json.JSONArray();
-        boolean supported=carrierId==1731 || carrierId==1936;
+        java.util.Set<String> chosen=new java.util.LinkedHashSet<>(java.util.Arrays.asList(out.optString("selectedCarriers","60502,60501").split(",")));
+        boolean supported=false;
         for (String operator : operators) {
-            String name="Other";
+            String name="Carrier "+operator;
             int expectedId=0;
-            if ("60502".equals(operator)) { name="Tunisie Telecom"; expectedId=1731; supported=true; }
-            if ("60501".equals(operator)) { name="Orange Tunisia"; expectedId=1936; supported=true; }
+            if ("60502".equals(operator)) { name="Tunisie Telecom"; expectedId=1731; }
+            if ("60501".equals(operator)) { name="Orange Tunisia"; expectedId=1936; }
+            if(chosen.contains(operator))supported=true;
             sims.put(new JSONObject().put("mccmnc",operator).put("name",name).put("expectedCarrierId",expectedId));
         }
-        boolean valid="true".equals(out.optString("configValid")) && CARRIER_DB_HASH.equals(out.optString("sourceHash"));
+        boolean valid="2".equals(out.optString("protocol")) && "true".equals(out.optString("configValid"));
         boolean mounted="true".equals(out.optString("overrideMounted"));
         boolean active="true".equals(out.optString("overrideActive"));
         String state=out.optString("moduleState","absent");
         boolean installed=!"absent".equals(state);
         boolean updatePending="true".equals(out.optString("updatePending"));
-        boolean updateRequired=installed && !updatePending && (!"2.0.0".equals(out.optString("moduleVersion")) || !"1".equals(out.optString("protocol")));
+        boolean updateRequired=installed && !updatePending && (!"3.0.0".equals(out.optString("moduleVersion")) || !"2".equals(out.optString("protocol")));
         boolean pending=updatePending || "true".equals(out.optString("pendingReboot")) || ("disabled".equals(state) && mounted);
         out.put("installed",installed).put("backendAvailable",rootHealth.optBoolean("authorized") && "true".equals(rootHealth.optString("ksuAvailable")))
             .put("supportedCarrierDetected",supported).put("activeSims",sims).put("defaultDataSubscriptionId",subId)
             .put("currentCarrierId",carrierId).put("dataNetworkType",dataType).put("dataNetworkName",networkTypeName(dataType))
-            .put("configurationValid",valid).put("mounted",mounted).put("active",active)
+            .put("configurationValid",valid).put("databaseCompatible","true".equals(out.optString("compatible"))).put("mounted",mounted).put("active",active)
             .put("updateRequired",updateRequired).put("rebootRequired",pending)
-            .put("intendedProfile",supported ? "wildcard_5g" : "Not applicable")
-            .put("mappings",new org.json.JSONArray().put("1731 → wildcard_5g").put("1936 → wildcard_5g"));
+            .put("intendedProfile","stock wildcard_5g")
+            .put("mappings",new org.json.JSONArray());
+        for(String code:chosen)out.getJSONArray("mappings").put(code+" → current stock wildcard_5g");
         return out;
     }
     private static String networkTypeName(int type) {
@@ -379,7 +385,8 @@ public final class LocalCustomization {
         if (!hook.optBoolean("fresh")) blockers.put("SystemUI hook has not reported health; activation or a SystemUI restart may be required");
         else if ("unsupported".equals(hook.optString("state")) || "error".equals(hook.optString("state"))) blockers.put("SystemUI hook reported a compatibility or runtime failure");
         boolean hookBridge=hook.optBoolean("fresh") && !"unsupported".equals(hook.optString("state")) && !"error".equals(hook.optString("state"));
-        if (!xp.optBoolean("connected") && !hookBridge) blockers.put("Enable Node Cockpit in Vector/compatible Xposed manager");
+        boolean hookDetected = hook.optBoolean("fresh") || hook.optBoolean("currentProcess");
+        if (!xp.optBoolean("connected") && !hookDetected) blockers.put("Enable Wirehelm in Vector/compatible Xposed manager");
         else if (xp.optBoolean("connected") && !hookBridge) {
             if (!xp.optBoolean("remoteConfig")) blockers.put("Framework does not support remote configuration");
             if (xp.optJSONArray("scope")==null || !xp.optJSONArray("scope").toString().contains("com.android.systemui")) blockers.put("SystemUI is outside the module scope");
@@ -394,7 +401,7 @@ public final class LocalCustomization {
         if (rootHealth.optBoolean("authorized") && "healthy".equals(rootHealth.optString("moduleState")) && rootLeaseValid()) capabilities.put("root.recoveryWatchdog");
         JSONObject carrier=carrierStatus();
         if (carrier.optBoolean("backendAvailable")) capabilities.put("root.carrierProfileOverride");
-        if (carrier.optBoolean("supportedCarrierDetected")) capabilities.put("carrier.tunisia5gSupported");
+        if (carrier.optBoolean("databaseCompatible")) capabilities.put("carrier.compatibleDatabase");
         return new JSONObject().put("config", c).put("supported", supported).put("android", Build.VERSION.RELEASE)
             .put("capabilities", capabilities).put("safeMode", app.getPackageManager().isSafeMode())
             .put("sdk", Build.VERSION.SDK_INT).put("fingerprint", Build.FINGERPRINT).put("device", Build.MODEL)
@@ -413,7 +420,11 @@ public final class LocalCustomization {
         int boot = bootCount();
         long age = boot >= 0 && p.getInt("hookBoot", -1) == boot && p.contains("hookElapsed")
             ? android.os.SystemClock.elapsedRealtime() - p.getLong("hookElapsed", 0) : Long.MAX_VALUE;
-        return new JSONObject().put("observed", p.contains("hookAt")).put("fresh", age >= 0 && age < 15000)
+        boolean currentProcess = age >= 0 && age != Long.MAX_VALUE && rootLeaseValid()
+            && rootHealth.optBoolean("authorized") && FeaturePolicy.reportedProcessRunning(
+                boot, p.getInt("hookBoot", -1), p.getInt("hookPid", 0), rootHealth.optString("systemUiPids", ""));
+        return new JSONObject().put("observed", p.contains("hookAt")).put("currentProcess", currentProcess)
+            .put("fresh", age >= 0 && age < 15000)
             .put("ageMs", age == Long.MAX_VALUE ? -1 : age).put("state", p.getString("hookState", "Not observed"))
             .put("error", p.getString("hookError", "")).put("revision", p.getLong("hookRevision", -1))
             .put("pid", p.getInt("hookPid", 0)).put("version", p.getString("hookVersion", ""));
@@ -474,10 +485,12 @@ public final class LocalCustomization {
                 "else echo moduleState=absent; fi; " +
                 "if [ -x /data/adb/ksud ]; then echo ksuAvailable=true; /data/adb/ksud -V 2>/dev/null; else echo ksuAvailable=false; fi; " +
                 "echo verifiedBootRaw=$(grep '^androidboot[.]verifiedbootstate ' /proc/bootconfig 2>/dev/null | cut -d '\"' -f 2); " +
+                "echo systemUiPids=$(pidof com.android.systemui 2>/dev/null); " +
                 "echo verifiedBoot=$(getprop ro.boot.verifiedbootstate); echo bootloaderLocked=$(getprop ro.boot.flash.locked); echo selinux=$(getenforce); " + (includeCarrier ? carrierProbeCommand() : ""));
     }
     /** Background shell collection cannot stall live visual edits behind LOCK. */
     private static void probeRootBackground() {
+        try (ProcessWork.Token work=ProcessWork.begin("background safety check")) {
         long previousCheck=rootCheckedAt;
         String output=null; Exception failure=null;
         try { output=collectRootHealth(false); } catch (Exception error) { failure=error; }
@@ -485,6 +498,7 @@ public final class LocalCustomization {
             // A newer explicit check wins over a background result collected earlier.
             if (rootCheckedAt!=previousCheck) return;
             acceptRootHealth(output,failure);
+        }
         }
     }
     private static void probeRoot() {
@@ -569,9 +583,7 @@ public final class LocalCustomization {
             "echo carrier.sourceFound=$([ -f " + CARRIER_MODULE + "/cfg.db ] && echo true || echo false); " +
             "echo carrier.sourceHash=$(sha256sum " + CARRIER_MODULE + "/cfg.db 2>/dev/null | awk '{print $1}'); " +
             "echo carrier.targetHash=$(sha256sum /vendor/firmware/carrierconfig/cfg.db 2>/dev/null | awk '{print $1}'); " +
-            "echo carrier.configValid=$([ \"$(sha256sum " + CARRIER_MODULE + "/cfg.db 2>/dev/null | awk '{print $1}')\" = \"" + CARRIER_DB_HASH + "\" ] && echo true || echo false); " +
-            "echo carrier.overrideMounted=$(grep -F ' /vendor/firmware/carrierconfig/cfg.db ' /proc/self/mountinfo >/dev/null 2>&1 && echo true || echo false); " +
-            "echo carrier.overrideActive=$([ \"$(sha256sum /vendor/firmware/carrierconfig/cfg.db 2>/dev/null | awk '{print $1}')\" = \"" + CARRIER_DB_HASH + "\" ] && grep -F ' /vendor/firmware/carrierconfig/cfg.db ' /proc/self/mountinfo >/dev/null 2>&1 && echo true || echo false); " +
+            "echo carrier.configValid=false; echo carrier.overrideActive=false; " +
             "echo carrier.simOperators=$(getprop gsm.sim.operator.numeric); echo carrier.networkOperators=$(getprop gsm.operator.numeric); " +
             "else echo carrier.protocol=0; echo carrier.moduleState=$([ -d " + update + " ] && echo pendingReboot || echo absent); fi";
     }
@@ -673,6 +685,18 @@ public final class LocalCustomization {
             JSONObject current=config(app),glass=new JSONObject(current.optString("edgePanelNativeGlass","{}"));
             JSONObject search=glass.optJSONObject("searchTray");if(search==null)search=new JSONObject();search.put("x",x).put("y",y);search.remove("docked");glass.put("searchTray",search);current.put("edgePanelNativeGlass",glass.toString());
             save(current);publish();Bundle result=new Bundle();result.putLong("revision",store(app).getLong("revision",0));return result;
+        }
+    }
+    public static JSONObject edgeActionSettings() throws Exception { return new JSONObject().put("raw",config(app).getString("edgePanelActions")); }
+    public static JSONObject saveEdgeActionSettings(String raw) throws Exception {
+        synchronized(LOCK){new EdgeActionSettings(raw);JSONObject current=config(app).put("edgePanelActions",raw);save(current);publish();app.getContentResolver().notifyChange(Uri.parse("content://com.example.remote_control.customization.health/configuration"),null);return edgeActionSettings();}
+    }
+    public static JSONObject addClipboardEdgeShortcut() throws Exception {
+        synchronized(LOCK){
+            JSONObject current=config(app);
+            String before=current.getString("edgePanelApps"),after=EdgeBuiltinShortcuts.addClipboard(before);
+            if(!before.equals(after))applyEdgeApps(after,current.getString("edgePanelFolderNames"));
+            return new JSONObject().put("added",!before.equals(after)).put("edgeEnabled",current.optBoolean("edgePanelEnabled"));
         }
     }
     static Bundle applyEdgeApps(String apps,String names) throws Exception {
@@ -840,6 +864,28 @@ public final class LocalCustomization {
         try { root("/data/adb/ksud module install '" + zip.getCanonicalPath().replace("'", "'\\''") + "'"); }
         finally { zip.delete(); }
     }
+    public static JSONObject carrierCatalog(String query) throws Exception {
+        if(query==null)query="";
+        if(query.length()>80)throw new IllegalArgumentException("Search is too long");
+        JSONObject status=carrierStatus();
+        if(status.optBoolean("rebootRequired"))throw new IllegalStateException("Reboot to finish the carrier backend change first");
+        if(!"2".equals(status.optString("protocol")))throw new IllegalStateException("Install the current carrier backend first");
+        String encoded="q:"+android.util.Base64.encodeToString(query.getBytes(java.nio.charset.StandardCharsets.UTF_8),android.util.Base64.NO_WRAP);
+        String response=root(CARRIER_MODULE+"/control.sh catalog '"+encoded+"'");
+        for(String line:response.split("\n"))if(line.startsWith("catalog="))
+            return new JSONObject(new String(android.util.Base64.decode(line.substring(8),android.util.Base64.DEFAULT),java.nio.charset.StandardCharsets.UTF_8));
+        throw new IOException("Carrier catalog unavailable");
+    }
+    public static JSONObject configureCarriers(String csv) throws Exception {
+        if(csv==null||!csv.matches("[0-9]{5,6}(,[0-9]{5,6}){0,31}"))throw new IllegalArgumentException("Choose between one and 32 valid carrier codes");
+        probeRoot();
+        JSONObject carrier=carrierStatus();
+        if(!carrier.optBoolean("backendAvailable")||!"2".equals(carrier.optString("protocol"))||!carrier.optBoolean("installed"))throw new IllegalStateException("Install the current carrier backend first");
+        if(carrier.optBoolean("rebootRequired"))throw new IllegalStateException("Reboot to finish the carrier backend change first");
+        root(CARRIER_MODULE+"/control.sh configure '"+csv+"'");
+        recordEvent(app,"carrierSelection","Updated selected carrier mappings; current radio state unchanged");
+        probeRoot();return probe(false);
+    }
     public static JSONObject installCarrier() throws Exception {
         probeRoot();
         JSONObject carrier=carrierStatus();
@@ -849,7 +895,11 @@ public final class LocalCustomization {
             throw new IllegalStateException("Carrier backend is already current");
         if ("removalPending".equals(state)) throw new IllegalStateException("Carrier backend is pending removal; reboot before installing it again");
         installAsset(CARRIER_ASSET);
-        recordEvent(app,"carrierProfile",("absent".equals(state)?"Installed":"Updated")+" Tunisia 5G backend; reboot required");
+        // KernelSU may auto-enable after customize.sh returns. Restore the user's
+        // disabled state in both live and staged directories after installation.
+        if("absent".equals(state)||"disabled".equals(state))
+            root("for d in "+CARRIER_MODULE+" /data/adb/modules_update/tn_5g_cfgdb_wildcard; do [ ! -d \"$d\" ] || touch \"$d/disable\"; done");
+        recordEvent(app,"carrierProfile",("absent".equals(state)?"Installed":"Updated")+" carrier backend; reboot required");
         probeRoot();
         return probe(false);
     }
@@ -858,7 +908,8 @@ public final class LocalCustomization {
         JSONObject carrier=carrierStatus();
         if (!carrier.optBoolean("backendAvailable")) throw new IllegalStateException("KernelSU root access is unavailable");
         if (!carrier.optBoolean("installed")) throw new IllegalStateException("Install the carrier backend first");
-        if (carrier.optBoolean("updateRequired")) throw new IllegalStateException("Update the carrier backend before changing its state");
+        if (enabled && carrier.optBoolean("updateRequired")) throw new IllegalStateException("Update the carrier backend before enabling it");
+        if (enabled && !carrier.optBoolean("databaseCompatible")) throw new IllegalStateException("Current vendor database is not compatible");
         if (carrier.optBoolean("rebootRequired")) throw new IllegalStateException("A carrier backend change is already waiting for reboot");
         if ("removalPending".equals(carrier.optString("moduleState"))) throw new IllegalStateException("Carrier backend is pending removal");
         root(CARRIER_MODULE + "/control.sh " + (enabled ? "enable" : "disable"));

@@ -59,6 +59,7 @@ class AdbRelayService : Service() {
         lock?.let { if (it.isHeld) it.release() }; lock = null
         isRunning = false
         TsnetBridge.releaseRemoteAdb(this)
+        ScreenOffShutdown.changed()
         super.onDestroy()
     }
     override fun onBind(intent: Intent?): IBinder? = null

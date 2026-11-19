@@ -32,6 +32,17 @@
         android:label="Wirehelm"
         android:name="com.nodecockpit.customization.CustomizationApplication"
         android:icon="@mipmap/ic_launcher">
+        <provider android:name=".clipboard.ClipboardShelfProvider" android:process=":clipboard" android:exported="true" android:authorities="${applicationId}.clipboard.shelf" />
+        <provider android:name=".clipboard.ClipboardImageProvider" android:process=":clipboard" android:exported="false" android:grantUriPermissions="true" android:authorities="${applicationId}.clipboard.files">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/clipboard_paths" />
+        </provider>
+        <service android:name=".battery.BatteryUsageService" android:process=":battery" android:exported="false" android:foregroundServiceType="specialUse">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="User-enabled battery discharge and customization activity history without wake locks" />
+        </service>
+        <provider android:name=".battery.BatteryUsageProvider" android:process=":battery" android:exported="false" android:authorities="${applicationId}.battery.usage" />
+        <receiver android:name=".battery.BatteryUsageBootReceiver" android:process=":battery" android:exported="false">
+            <intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" /><action android:name="android.intent.action.MY_PACKAGE_REPLACED" /></intent-filter>
+        </receiver>
         <service android:name=".ButtonShortcutService" android:exported="false"
             android:foregroundServiceType="specialUse">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"

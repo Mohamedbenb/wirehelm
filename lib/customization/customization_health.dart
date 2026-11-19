@@ -1,6 +1,10 @@
 Map<String, dynamic> healthSection(Map<String, dynamic> data, String key) =>
     Map<String, dynamic>.from((data[key] as Map?) ?? {});
 
+// A blocked hook can still prove the module loaded. This does not grant capabilities.
+bool systemUiHookDetected(Map<String, dynamic> hook) =>
+    hook['fresh'] == true || hook['currentProcess'] == true;
+
 class CustomizationCheck {
   final String title, detail;
   final bool attention;
@@ -17,6 +21,7 @@ String indicatorStatus(Map<String, dynamic> data) {
         : 'Stopped by recovery';
   }
   if (config['enabled'] != true) return 'Off';
+  if (data['supported'] != true) return 'Android build not validated';
   if (hook['fresh'] != true) return 'Waiting for SystemUI';
   if (data['hookUpdateRequired'] == true) return 'Hook update ready';
   if (hook['revision'] != config['revision']) return 'Applying settings';
@@ -43,9 +48,11 @@ List<CustomizationCheck> customizationChecks(Map<String, dynamic> data) {
   final userDisabled =
       !enabled && config['recoveryReason'] == 'Disabled by user';
   final scope = ((xp['scope'] as List?) ?? []).contains('com.android.systemui');
-  final hookBridge = hook['fresh'] == true &&
+  final hookBridge =
+      hook['fresh'] == true &&
       hook['state'] != 'error' &&
       hook['state'] != 'unsupported';
+  final hookDetected = systemUiHookDetected(hook);
   final current = hook['revision'] == config['revision'];
   final interval = (config['intervalMs'] as num?)?.toInt() ?? 1000;
   final sampleAge = (metrics['sampleAgeMs'] as num?)?.toInt() ?? -1;
@@ -82,8 +89,12 @@ List<CustomizationCheck> customizationChecks(Map<String, dynamic> data) {
           ? '${xp['name']} · API ${xp['api']} · ${scope ? 'SystemUI scoped' : 'scope missing'}'
           : hookBridge
           ? 'SystemUI hook bridge active · manager service connection unavailable'
+          : hookDetected
+          ? hook['state'] == 'unsupported'
+                ? 'SystemUI module loaded · Android build not validated'
+                : 'SystemUI module loaded · no current heartbeat'
           : 'Not connected to the Xposed service',
-      attention: !hookBridge && (xp['connected'] != true || !scope),
+      attention: !hookDetected && (xp['connected'] != true || !scope),
     ),
     CustomizationCheck(
       'Recovery watchdog',
@@ -156,7 +167,7 @@ List<CustomizationCheck> customizationChecks(Map<String, dynamic> data) {
       CustomizationCheck(
         'Carrier backend',
         !carrierInstalled
-            ? 'Supported Tunisian carrier detected; backend is not installed.'
+            ? 'Selected carrier detected; backend is not installed.'
             : carrier['updateRequired'] == true
             ? 'A managed backend update is available.'
             : carrier['rebootRequired'] == true
@@ -174,10 +185,13 @@ List<CustomizationCheck> customizationChecks(Map<String, dynamic> data) {
         carrier['rebootRequired'] == true && carrier['sourceFound'] != 'true'
             ? 'The staged database will be verified after reboot.'
             : carrier['configurationValid'] == true
-            ? 'Known-good cfgdb and approved Tunisia mappings verified.'
-            : 'The installed cfgdb does not match the approved artifact.',
+            ? 'Current vendor copy and selected carrier mappings verified.'
+            : carrier['databaseCompatible'] == true && !carrierEnabled
+            ? 'Compatible stock database; override generates when enabled.'
+            : 'No verified override for the current vendor database.',
         attention:
             carrier['configurationValid'] != true &&
+            !(carrier['databaseCompatible'] == true && !carrierEnabled) &&
             !(carrier['rebootRequired'] == true &&
                 carrier['sourceFound'] != 'true'),
       ),

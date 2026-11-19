@@ -59,6 +59,7 @@ flutter {
 dependencies {
     implementation(files("libs/tsnet.aar"))
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
     implementation(project(":termux-terminal"))
     implementation(project(":customization"))
 }

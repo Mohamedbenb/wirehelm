@@ -80,3 +80,6 @@ android/app/libs/tsnet-sources.jar
 /modules/node-cockpit-carrier/cfg.db
 /android/customization/src/main/assets/node-cockpit-*.zip
 /android/customization/src/main/assets/node-cockpit-*.sha256
+
+/modules/node-cockpit-carrier/patcher.jar
+/modules/node-cockpit-carrier/patcher.sha256

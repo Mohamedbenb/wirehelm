@@ -11,7 +11,7 @@ import android.graphics.drawable.Drawable;
 
 /** Small line icons for edge panel controls. The existing edge ink supplies their color. */
 final class EdgePanelIcon extends Drawable {
-    enum Kind { EDIT, SCREENSHOT, SETTINGS, WINDOWS, ADD, BACK, CANCEL, SAVE, MORE }
+    enum Kind { EDIT, SCREENSHOT, SETTINGS, WINDOWS, ADD, BACK, CANCEL, SAVE, MORE, CLIPBOARD }
 
     private final Kind kind;
     private final ConstantState state;
@@ -26,7 +26,7 @@ final class EdgePanelIcon extends Drawable {
         };
         paint.setColor(Color.WHITE);
         paint.setStyle(Paint.Style.STROKE);
-        paint.setStrokeWidth(1.8f);
+        paint.setStrokeWidth(2f);
         paint.setStrokeCap(Paint.Cap.ROUND);
         paint.setStrokeJoin(Paint.Join.ROUND);
     }
@@ -50,12 +50,16 @@ final class EdgePanelIcon extends Drawable {
                 canvas.drawCircle(12, 12, 3.2f, paint);
                 break;
             case SETTINGS:
-                canvas.drawCircle(12, 12, 2.8f, paint);
-                line(canvas, 15, 6, 14, 4, 10, 4, 9, 6, 7, 7, 4.8f, 7, 3.2f, 10, 4.7f, 12, 4.7f, 13.8f,
-                        3.2f, 15.5f, 4.8f, 18, 7.2f, 18, 9, 19, 10, 21, 14, 21, 15, 19,
-                        16.8f, 18, 19.2f, 18, 20.8f, 15.5f, 19.3f, 13.8f, 19.3f, 12,
-                        20.8f, 10, 19.2f, 7, 17, 7, 15, 6);
-                break;
+                canvas.drawCircle(12,12,2.8f,paint);path.reset();
+                for(int i=0;i<32;i++){
+                    double angle=-Math.PI/2+i*Math.PI/16;float radius=(i%4==1||i%4==2)?8.5f:6.7f;
+                    float x=12+(float)Math.cos(angle)*radius,y=12+(float)Math.sin(angle)*radius;
+                    if(i==0)path.moveTo(x,y);else path.lineTo(x,y);
+                }
+                path.close();canvas.drawPath(path,paint);break;
+            case CLIPBOARD:
+                canvas.drawRoundRect(5,5,19,21,2,2,paint);canvas.drawRoundRect(9,3,15,7,1,1,paint);
+                line(canvas,9,11,15,11);line(canvas,9,15,15,15);break;
             case WINDOWS:
                 line(canvas, 3.5f, 14, 3.5f, 4.5f, 16.5f, 4.5f, 16.5f, 7.5f);
                 canvas.drawRoundRect(7.5f, 8, 21, 19.5f, 1.8f, 1.8f, paint);

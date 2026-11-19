@@ -1,16 +1,23 @@
 import 'dart:async';
+
 import 'app_network_screen.dart';
 import 'button_shortcuts_screen.dart';
 import 'camera_ring_screen.dart';
 import 'device_snapshot_screen.dart';
+import 'battery_usage_screen.dart';
+import 'clipboard_shelf_screen.dart';
+import 'edge_actions_screen.dart';
+import '../services/app_shortcut_navigation.dart';
 import 'notification_undo_screen.dart';
 import 'photos_sources_screen.dart';
 import 'root_files_screen.dart';
+
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
 import '../customization/local_customization.dart';
+import '../customization/carrier_selection_dialog.dart';
 import '../customization/feature_registry.dart';
 import '../customization/customization_health.dart';
 import '../customization/network_indicator_preview.dart';
@@ -150,10 +157,9 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
         return;
       }
       try {
-        final result = await LocalCustomization.call(
-          'applyVisual',
-          {'config': jsonEncode(config)},
-        );
+        final result = await LocalCustomization.call('applyVisual', {
+          'config': jsonEncode(config),
+        });
         if (mounted &&
             visualRequestId == _visualRequestId &&
             result['config'] is Map) {
@@ -290,7 +296,9 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
           catalog ??
           ((await LocalCustomization.call('launcherApps', {
                     'includeSelf': true,
-                  }))['apps'] as List)
+                    'edgeShortcuts': true,
+                  }))['apps']
+                  as List)
               .map((e) => Map<String, dynamic>.from(e as Map))
               .toList();
       final rules = _edgeAppRules();
@@ -299,18 +307,19 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
           (foregroundPackage == null
                   ? defaultApps
                   : rules[foregroundPackage] ?? '')
-          .split(RegExp('[,+]'))
-          .where((value) => value.isNotEmpty && value != foregroundPackage)
-          .toSet();
+              .split(RegExp('[,+]'))
+              .where((value) => value.isNotEmpty && value != foregroundPackage)
+              .toSet();
       final selected = Set<String>.from(current);
       final contextual = foregroundPackage != null;
       final appLabels = {
-        for (final app in apps) app['package'] as String: app['label'] as String,
+        for (final app in apps)
+          app['package'] as String: app['label'] as String,
       };
       var query = '';
       if (!mounted) return;
       final choices = [
-        ...apps,
+        ...apps.where((app) => !chooseContext || app['builtin'] != true),
         if (chooseContext)
           for (final package in rules.keys)
             if (!appLabels.containsKey(package))
@@ -590,7 +599,14 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
               if (saveScope == null) _setupMenu(),
               IconButton(
                 tooltip: 'Refresh',
-                onPressed: _busy ? null : () => _run('probe'),
+                onPressed: _busy
+                    ? null
+                    : () => _run(
+                        'probe',
+                        arguments: title == 'Carrier profile override'
+                            ? {'requestRoot': true}
+                            : null,
+                      ),
                 icon: const Icon(Icons.refresh),
               ),
             ],
@@ -681,15 +697,20 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
                     subtitle: 'Camera ring for pending notifications · app priorities',
                     icon: Icons.notifications_active_outlined,
                     onTap: () => Navigator.of(menuContext).push<void>(
-                      MaterialPageRoute(builder: (_) => const CameraRingScreen()),
+                      MaterialPageRoute(
+                        builder: (_) => const CameraRingScreen(),
+                      ),
                     ),
                   ),
                   _featureLink(
                     title: 'Notification Undo',
-                    subtitle: 'Undo with a button or shake · drawer and lock screen',
+                    subtitle:
+                        'Undo with a button or shake · drawer and lock screen',
                     icon: Icons.undo,
                     onTap: () => Navigator.of(menuContext).push<void>(
-                      MaterialPageRoute(builder: (_) => const NotificationUndoScreen()),
+                      MaterialPageRoute(
+                        builder: (_) => const NotificationUndoScreen(),
+                      ),
                     ),
                   ),
                   _featureLink(
@@ -697,7 +718,9 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
                     subtitle: 'Assign volume gestures for when audio is idle',
                     icon: Icons.volume_up_outlined,
                     onTap: () => Navigator.of(menuContext).push<void>(
-                      MaterialPageRoute(builder: (_) => const ButtonShortcutsScreen()),
+                      MaterialPageRoute(
+                        builder: (_) => const ButtonShortcutsScreen(),
+                      ),
                     ),
                   ),
                   _featureLink(
@@ -791,12 +814,12 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(
-          update ? 'Update Tunisia 5G backend?' : 'Install Tunisia 5G backend?',
+          update ? 'Update carrier backend?' : 'Install carrier backend?',
         ),
         content: Text(
           update
-              ? 'This keeps the proven cfgdb mapping, adds managed health checks, and fixes file permissions. The current override remains in use until you reboot.'
-              : 'This installs a KernelSU module that maps Tunisie Telecom and Orange Tunisia to the existing wildcard_5g modem profile. The vendor partition remains untouched. A reboot is required.',
+              ? 'This replaces the old bundled database with a firmware-local generator. Disabled overrides stay disabled. Reboot to finish the backend update, then enable it when ready.'
+              : 'This installs a disabled KernelSU backend. After reboot, enable it to derive Tunisie Telecom and Orange mappings from the current vendor database. Unsupported database layouts stay stock.',
         ),
         actions: [
           TextButton(
@@ -813,16 +836,39 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
     if (yes == true) await _run('installCarrier');
   }
 
+  Future<void> _chooseCarriers(Map<String, dynamic> carrier) async {
+    final current = '${carrier['selectedCarriers'] ?? '60502,60501'}'
+        .split(',')
+        .toSet();
+    final result = await showDialog<Set<String>>(
+      context: context,
+      builder: (_) => CarrierSelectionDialog(
+        selected: current,
+        load: (query) =>
+            LocalCustomization.call('carrierCatalog', {'query': query}),
+      ),
+    );
+    if (!mounted ||
+        result == null ||
+        (result.length == current.length && result.containsAll(current))) {
+      return;
+    }
+    await _run(
+      'configureCarriers',
+      arguments: {'carriers': (result.toList()..sort()).join(',')},
+    );
+  }
+
   Future<void> _setCarrierEnabled(bool enabled) async {
     final yes = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(
-          enabled ? 'Enable Tunisia 5G fix?' : 'Restore stock behavior?',
+          enabled ? 'Enable carrier override?' : 'Restore stock behavior?',
         ),
         content: Text(
           enabled
-              ? 'KernelSU will expose the validated cfgdb override after the next reboot. Both supported Tunisian carriers are detected automatically.'
+              ? 'At the next boot, the backend will copy the current vendor database, resolve its stock 5G profile and patch only the selected carrier mappings. Unsupported layouts stay stock. A stock backup is retained.'
               : 'KernelSU will stop exposing the cfgdb override after the next reboot. The stock vendor database itself has never been modified.',
         ),
         actions: [
@@ -923,6 +969,7 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
     final config = healthSection(data, 'config');
     if (config['emergencyDisabled'] == true) return 'Stopped by recovery';
     if (config['edgePanelEnabled'] != true) return 'Off';
+    if (data['supported'] != true) return 'Android build not validated';
     if ((data['safetyLeaseRemainingMs'] as num? ?? 0) <= 0) {
       return 'Waiting for safety check';
     }
@@ -957,9 +1004,13 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
       ),
 
       if (!enabled && !requirementsMet)
-        const Padding(
-          padding: EdgeInsets.only(bottom: 10),
-          child: Text('Complete Setup assistant before enabling this feature.'),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Text(
+            data['supported'] == true
+                ? 'Complete Setup assistant before enabling this feature.'
+                : 'This Android build is not validated; SystemUI features remain blocked.',
+          ),
         ),
       const Divider(height: 30),
       const SizedBox(height: 10),
@@ -984,6 +1035,28 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
               : '$appRuleCount of 16 app-specific lists',
         ),
         onTap: _busy ? null : () => _selectEdgeApps(chooseContext: true),
+      ),
+      ListTile(
+        contentPadding: EdgeInsets.zero,
+        leading: const Icon(Icons.tune),
+        title: const Text('Panel actions'),
+        subtitle: const Text('Buttons, order, columns, icon size and labels'),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: _busy
+            ? null
+            : () async {
+                final raw = await Navigator.of(context).push<String>(
+                  MaterialPageRoute(
+                    settings: const RouteSettings(name: edgeActionsRoute),
+                    builder: (_) => EdgeActionsScreen(
+                      initialRaw: config['edgePanelActions'] as String? ?? '{}',
+                    ),
+                  ),
+                );
+                if (raw != null && mounted) {
+                  await _apply('edgePanelActions', raw);
+                }
+              },
       ),
       _tuningSlider(
         title: 'Panel width',
@@ -1027,7 +1100,8 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
       ),
       NativeLiquidControls(
         raw: (config['edgePanelNativeGlass'] as String?) ?? '{}',
-        onChanged: (value) => _liveNetworkSetting('edgePanelNativeGlass', value),
+        onChanged: (value) =>
+            _liveNetworkSetting('edgePanelNativeGlass', value),
       ),
       _tuningSlider(
         title: 'Vertical position',
@@ -1349,7 +1423,7 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
 
   Widget _carrierFeature(Map<String, dynamic> data) {
     final carrier = healthSection(data, 'carrier');
-    return _card('Tunisia 5G profile', [
+    return _card('Carrier profile override', [
       Text(
         carrier['active'] == true
             ? 'Active'
@@ -1361,7 +1435,14 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
         style: Theme.of(context).textTheme.titleMedium,
       ),
       const SizedBox(height: 10),
-      _line('Mode', 'Automatic'),
+      _line('Selected carriers', carrier['selectedCarriers'] ?? '60502,60501'),
+      if (carrier['installed'] == true && carrier['updateRequired'] != true)
+        OutlinedButton.icon(
+          onPressed: _busy ? null : () => _chooseCarriers(carrier),
+          icon: const Icon(Icons.search),
+          label: const Text('Choose carriers'),
+        ),
+      _line('Mode', 'Firmware-local'),
       _line('SIMs', _carrierSims(carrier)),
       _line(
         'Current carrier ID',
@@ -1381,9 +1462,12 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
       _line(
         'Configuration',
         carrier['rebootRequired'] == true && carrier['sourceFound'] != 'true'
-            ? 'Staged · verifies after reboot'
+            ? 'Staged · generates from current firmware after reboot'
             : carrier['configurationValid'] == true
-            ? 'Validated'
+            ? 'Current vendor copy and selected mappings verified'
+            : carrier['databaseCompatible'] == true &&
+                  carrier['moduleState'] == 'disabled'
+            ? 'Compatible vendor database · generates when enabled'
             : carrier['sourceFound'] == 'true'
             ? 'Unexpected database'
             : 'Not installed',
@@ -1396,7 +1480,7 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
         const Padding(
           padding: EdgeInsets.only(top: 10),
           child: Text(
-            'No supported Tunisian carrier is currently detected. The backend will remain ready for TUNTEL 60502 or Orange Tunisia 60501.',
+            'No selected carrier is currently detected. You can configure carriers before inserting their SIMs.',
           ),
         ),
       if (carrier['rebootRequired'] == true)
@@ -1440,12 +1524,13 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
               carrier['rebootRequired'] != true &&
               carrier['moduleState'] == 'disabled')
             FilledButton.icon(
-              onPressed: _busy ? null : () => _setCarrierEnabled(true),
+              onPressed: _busy || carrier['databaseCompatible'] != true
+                  ? null
+                  : () => _setCarrierEnabled(true),
               icon: const Icon(Icons.power_settings_new),
-              label: const Text('Enable fix'),
+              label: const Text('Enable override'),
             ),
           if (carrier['installed'] == true &&
-              carrier['updateRequired'] != true &&
               carrier['rebootRequired'] != true &&
               carrier['moduleState'] == 'enabled')
             OutlinedButton.icon(
@@ -1457,7 +1542,7 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
       ),
       const SizedBox(height: 10),
       Text(
-        'Known mappings: 1731 → wildcard_5g and 1936 → wildcard_5g. No modem binaries, UE capabilities, or other carrier profiles are changed.',
+        'Carrier IDs and wildcard_5g are resolved from this firmware. A compatible cfgdb is required; this does not unlock every modem or guarantee network 5G availability.',
         style: Theme.of(context).textTheme.bodySmall,
       ),
     ], icon: Icons.network_cell_outlined);
@@ -1474,17 +1559,19 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
     final hook = healthSection(data, 'hook');
     final root = healthSection(data, 'root');
     final scope = (xp['scope'] as List?) ?? const [];
-    final hookReady = _hookReady(hook);
+    final hookDetected = systemUiHookDetected(hook);
     return vector['installed'] == true &&
-        (xp['connected'] == true || hookReady) &&
-        (scope.contains('com.android.systemui') || hookReady) &&
+        (xp['connected'] == true || hookDetected) &&
+        (scope.contains('com.android.systemui') || hookDetected) &&
         root['authorized'] == true &&
         root['moduleState'] == 'healthy';
   }
 
   String _setupSummary(Map<String, dynamic> data) {
     if (_setupComplete(data)) {
-      return 'Vector, root access and recovery are ready';
+      return data['supported'] == true
+          ? 'Vector, root access and recovery are ready'
+          : 'Setup complete · Android build not validated';
     }
     final root = healthSection(data, 'root');
     if (root['moduleState'] == 'pendingReboot') {
@@ -1529,10 +1616,10 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
     final hook = healthSection(data, 'hook');
     final root = healthSection(data, 'root');
     final vectorReady = vector['installed'] == true;
-    final hookReady = _hookReady(hook);
-    final moduleReady = xp['connected'] == true || hookReady;
+    final hookDetected = systemUiHookDetected(hook);
+    final moduleReady = xp['connected'] == true || hookDetected;
     final scope = (xp['scope'] as List?) ?? const [];
-    final scopeReady = hookReady || scope.contains('com.android.systemui');
+    final scopeReady = hookDetected || scope.contains('com.android.systemui');
     final kernelSuReady = kernelsu['installed'] == true;
     final rootReady = root['authorized'] == true;
     final recoveryReady = root['moduleState'] == 'healthy';
@@ -1554,7 +1641,9 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
     return _card('Guided setup', [
       Text(
         firstIncomplete == 6
-            ? 'Setup is complete. Phone customization can now use its required safety backends.'
+            ? data['supported'] == true
+                  ? 'Setup is complete. Phone customization can now use its required safety backends.'
+                  : 'Setup is complete. This Android build is not validated; SystemUI features remain blocked.'
             : 'Complete each step in order. Installation, root access and module activation always require your confirmation.',
       ),
       const SizedBox(height: 12),
@@ -1571,9 +1660,11 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
             : null,
       ),
       _setupStep(
-        title: '2. Enable Node Cockpit',
+        title: '2. Enable Wirehelm',
         detail: moduleReady
-            ? 'Vector module connected'
+            ? xp['connected'] == true
+                  ? 'Vector module connected'
+                  : 'Module detected in SystemUI'
             : 'Enable the module from Vector’s Modules tab',
         complete: moduleReady,
         action: firstIncomplete == 1
@@ -1588,7 +1679,7 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
         title: '3. System UI scope',
         detail: scopeReady
             ? 'System UI is included'
-            : 'Add System UI to Node Cockpit’s scope',
+            : 'Add System UI to Wirehelm’s scope',
         complete: scopeReady,
         action: firstIncomplete == 2
             ? FilledButton.icon(
@@ -1616,7 +1707,7 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
         title: '5. Root access',
         detail: rootReady
             ? 'KernelSU access verified'
-            : 'Approve Node Cockpit when KernelSU asks',
+            : 'Approve Wirehelm when KernelSU asks',
         complete: rootReady,
         action: firstIncomplete == 4
             ? FilledButton.icon(
@@ -1658,16 +1749,17 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
     final xp = healthSection(data, 'xposed');
     final hook = healthSection(data, 'hook');
     final vector = healthSection(data, 'vector');
-    final hookReady =
-        hook['fresh'] == true &&
-        hook['state'] != 'unsupported' &&
-        hook['state'] != 'error';
-    final frameworkReady = xp['connected'] == true || hookReady;
+    final frameworkReady =
+        xp['connected'] == true || systemUiHookDetected(hook);
     final recoveryReady = root['moduleState'] == 'healthy';
     if (vector['installed'] != true && !frameworkReady) {
       return 'Vector installation required';
     }
-    if (frameworkReady && recoveryReady) return 'Vector and recovery ready';
+    if (frameworkReady && recoveryReady) {
+      return data['supported'] == true
+          ? 'Vector and recovery ready'
+          : 'Module loaded · Android build not validated';
+    }
     if (frameworkReady) return 'Vector ready · recovery needs attention';
     if (recoveryReady) return 'Recovery ready · Vector needs attention';
     return 'Setup or verification required';
@@ -1685,20 +1777,24 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
         hook['state'] != 'unsupported' &&
         hook['state'] != 'error';
     final frameworkConnected = xp['connected'] == true;
-    final frameworkReady = frameworkConnected || hookReady;
+    final hookDetected = systemUiHookDetected(hook);
+    final frameworkReady = frameworkConnected || hookDetected;
     final scope = (xp['scope'] as List?)?.cast<Object?>() ?? const [];
-    final systemUiScoped = scope.contains('com.android.systemui');
+    final systemUiScoped =
+        hookDetected || scope.contains('com.android.systemui');
     final String vectorGuidance;
     if (!vectorInstalled && !frameworkReady) {
-      vectorGuidance = 'Vector is not installed. Install it first; Vector will discover Node Cockpit automatically from this app.';
+      vectorGuidance = 'Vector is not installed. Install it first; Vector will discover Wirehelm automatically from this app.';
     } else if (!frameworkReady) {
-      vectorGuidance = 'Vector found Node Cockpit, but the module is inactive. Enable it and keep System UI in its scope.';
+      vectorGuidance = 'Vector found Wirehelm, but the module is inactive. Enable it and keep System UI in its scope.';
     } else if (frameworkConnected && !systemUiScoped) {
-      vectorGuidance = 'Node Cockpit is enabled, but System UI is outside its scope. Add System UI in Vector.';
+      vectorGuidance = 'Wirehelm is enabled, but System UI is outside its scope. Add System UI in Vector.';
+    } else if (data['supported'] != true) {
+      vectorGuidance = 'Wirehelm is detected in SystemUI. This Android build is not validated, so SystemUI features remain blocked.';
     } else if (!hookReady) {
-      vectorGuidance = 'Node Cockpit is configured in Vector. Restart System UI or reboot to activate the hook.';
+      vectorGuidance = 'Wirehelm is configured in Vector. Restart System UI or reboot to activate the hook.';
     } else {
-      vectorGuidance = 'Node Cockpit is active in Vector for System UI.';
+      vectorGuidance = 'Wirehelm is active in Vector for System UI.';
     }
     return Column(
       children: [
@@ -2038,6 +2134,25 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
               ),
             ),
             _featureLink(
+              title: 'Clipboard shelf',
+              subtitle: 'Copied text, images and pinned clips',
+              icon: Icons.content_copy,
+              onTap: () => Navigator.of(context).push<void>(
+                MaterialPageRoute(
+                  settings: const RouteSettings(name: clipboardShelfRoute),
+                  builder: (_) => const ClipboardShelfScreen(),
+                ),
+              ),
+            ),
+            _featureLink(
+              title: 'Battery usage',
+              subtitle: 'Discharge history and customization activity',
+              icon: Icons.history_outlined,
+              onTap: () => Navigator.of(context).push<void>(
+                MaterialPageRoute(builder: (_) => const BatteryUsageScreen()),
+              ),
+            ),
+            _featureLink(
               title: 'What changed?',
               subtitle: 'Compare your phone with a saved snapshot',
               icon: Icons.history_outlined,
@@ -2047,15 +2162,28 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
             ),
             _featureLink(
               title: 'Root file explorer',
-              subtitle: 'Read-only browsing · protected, temporary folder writes',
+              subtitle:
+                  'Read-only browsing · protected, temporary folder writes',
               icon: Icons.folder_outlined,
-              onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const RootFilesScreen())),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const RootFilesScreen(),
+                ),
+              ),
             ),
             _featureLink(
-              title: 'Tunisia 5G profile',
+              title: 'Carrier profile override',
               subtitle: _carrierSummary(_section('carrier')),
               icon: Icons.network_cell_outlined,
-              onTap: () => _openFeature('Tunisia 5G profile', _carrierFeature),
+              onTap: () async {
+                await _run('probe', arguments: {'requestRoot': true});
+                if (mounted) {
+                  await _openFeature(
+                    'Carrier profile override',
+                    _carrierFeature,
+                  );
+                }
+              },
             ),
             _featureLink(
               title: 'System integration',

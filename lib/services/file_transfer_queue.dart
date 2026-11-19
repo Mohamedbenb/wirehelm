@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'background_keep_alive.dart';
+
 import 'package:flutter/foundation.dart';
 
 enum TransferState { queued, running, completed, cancelled, failed }
@@ -64,6 +66,7 @@ class FileTransferQueue extends ChangeNotifier {
     if (_running || _closed) return;
     _running = true;
     _idle = Completer<void>();
+    final protection = backgroundKeepAlive.beginWork('file transfers');
     try {
       while (!_closed) {
         final pending = items.where((t) => t.state == TransferState.queued);
@@ -94,6 +97,7 @@ class FileTransferQueue extends ChangeNotifier {
         if (!_closed) notifyListeners();
       }
     } finally {
+      await backgroundKeepAlive.endWork(await protection);
       _running = false;
       _idle?.complete();
       _idle = null;

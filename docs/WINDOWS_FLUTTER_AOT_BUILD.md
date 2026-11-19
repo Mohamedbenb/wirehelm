@@ -26,3 +26,8 @@ The script runs Android ARM64 gen_snapshot with --deterministic --snapshot_kind=
 Run :app:assembleRelease with -x :app:compileFlutterBuildRelease -Ptarget-platform=android-arm64. This exclusion is safe only after staging the freshly compiled frontend. Verify the merged native library matches the staged binary, then verify the APK matches AGP's stripped library. AGP can change ELF bookkeeping even with gen_snapshot --strip; compare loaded code/data segments (excluding the ELF header) before declaring a hash difference stale. Also verify version, signature, Xposed entry and removed services/classes. A successful Gradle package of stale inputs is not a new UI build.
 
 Record the resulting APK hash and any installation or startup verification in the handoff.
+
+
+## Frontend GC fallback (build 314)
+
+On this PC, the Dart 3.13.4 AOT frontend intermittently exited with Windows access violations while tokenizing/allocating. A fresh build completed using `scripts/compile_android_frontend.py --serial-gc` with the normal Android target, registrant and native-assets arguments. This optional host-only flag adds `--no-concurrent-mark --no-concurrent-sweep --marker-tasks=1 --scavenger-tasks=1` before the frontend snapshot. It changes neither Android app GC settings nor the SDK installation. Zero marker tasks, despite runtime help text, asserted `num_tasks > 0` on this runtime; use one. The successful retry is not proof of the original crash's root cause. Exact frontend arguments and freshness evidence are recorded in `build/android-314-edge-serial.json`.

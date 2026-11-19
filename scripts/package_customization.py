@@ -2,7 +2,6 @@
 from pathlib import Path
 from zipfile import ZipFile, ZipInfo, ZIP_DEFLATED
 import hashlib
-import sqlite3
 
 root = Path(__file__).resolve().parent.parent
 target = root / 'android/customization/src/main/assets'
@@ -14,13 +13,13 @@ def package_module(name: str) -> None:
     archive = target / f'{name}.zip'
     with ZipFile(archive, 'w', compression=ZIP_DEFLATED) as output:
         for path in sorted(source.iterdir()):
-            if path.is_file():
+            if path.is_file() and not (name == "node-cockpit-carrier" and path.name not in {"common.sh", "control.sh", "post-fs-data.sh", "post-mount.sh", "customize.sh", "module.prop", "carriers.list", "patcher.jar", "patcher.sha256"}):
                 entry = ZipInfo(path.name, (2026, 1, 1, 0, 0, 0))
                 entry.external_attr = (
                     0o100755 if path.suffix == '.sh' else 0o100644
                 ) << 16
                 data = path.read_bytes()
-                if path.suffix in {'.sh', '.prop'}:
+                if path.suffix in {'.sh', '.prop', '.list'}:
                     data = data.replace(b'\r\n', b'\n')
                 output.writestr(entry, data, compress_type=ZIP_DEFLATED)
     digest = hashlib.sha256(archive.read_bytes()).hexdigest()
@@ -28,30 +27,33 @@ def package_module(name: str) -> None:
     print(f'Packaged {name}: {digest}')
 
 
-carrier_db = root / 'modules/node-cockpit-carrier/cfg.db'
-if not carrier_db.is_file():
-    if any((target / f'node-cockpit-carrier.{suffix}').exists() for suffix in ('zip', 'sha256')):
-        raise SystemExit('Carrier database missing while generated carrier assets are present.')
-    package_module('node-cockpit-system')
-    print('Skipped optional carrier backend: no local carrier database.')
-    raise SystemExit(0)
+# Carrier backend contains code only; vendor data is copied on the device.
+import os
+import subprocess
+import shutil
 
-expected_db_hash = '17faf3c27a4f8939f712eb280118e2b15fdef3ea7564ac921535cfcb1c1c3a6e'
-if hashlib.sha256(carrier_db.read_bytes()).hexdigest() != expected_db_hash:
-    raise SystemExit('Carrier cfg.db differs from the known-good artifact')
-with sqlite3.connect(f'file:{carrier_db.as_posix()}?mode=ro', uri=True) as db:
-    if db.execute('PRAGMA integrity_check').fetchone()[0] != 'ok':
-        raise SystemExit('Carrier cfg.db failed SQLite integrity check')
-    mappings = dict(
-        db.execute(
-            "SELECT carrier_id, confman FROM confmap WHERE carrier_id IN ('1731','1936')"
-        )
-    )
-if mappings != {
-    '1731': '185a2d82ac1e10bf3911e46a882e993cf72621ab',
-    '1936': '185a2d82ac1e10bf3911e46a882e993cf72621ab',
-}:
-    raise SystemExit('Carrier cfg.db does not contain the approved Tunisia mappings')
-
+sdk = Path(os.environ.get('ANDROID_SDK_ROOT', Path.home() / 'AppData/Local/Android/sdk'))
+jdk = Path(os.environ.get('JAVA_HOME', 'C:/Program Files/Android/Android Studio/jbr'))
+work = root / 'build/carrier-patcher'
+classes = work / 'classes'
+dex = work / 'dex'
+classes.mkdir(parents=True, exist_ok=True)
+dex.mkdir(parents=True, exist_ok=True)
+source = root / 'scripts/carrier/CarrierDatabaseTool.java'
+platforms = sorted((sdk/'platforms').glob('android*/android.jar'), key=lambda p: tuple(int(v) for v in __import__('re').findall(r'\d+', p.parent.name)))
+if not platforms:
+    raise SystemExit('No Android SDK platform found for carrier patcher compilation')
+android_jar = platforms[-1]
+d8 = sdk / 'build-tools/36.0.0/d8.bat'
+env = os.environ.copy()
+env['JAVA_HOME'] = str(jdk)
+subprocess.run([str(jdk/'bin/javac.exe'), '-encoding', 'UTF-8', '--release', '17', '-classpath', str(android_jar), '-d', str(classes), str(source)], check=True, env=env)
+compiled = sorted(classes.rglob('*.class'))
+subprocess.run([str(d8), '--min-api', '26', '--lib', str(android_jar), '--output', str(dex), *map(str, compiled)], check=True, env=env)
+module = root / 'modules/node-cockpit-carrier'
+with ZipFile(module/'patcher.jar', 'w', compression=ZIP_DEFLATED) as jar:
+    entry = ZipInfo('classes.dex', (2026, 1, 1, 0, 0, 0))
+    jar.writestr(entry, (dex/'classes.dex').read_bytes(), compress_type=ZIP_DEFLATED)
+(module/'patcher.sha256').write_text(hashlib.sha256((module/'patcher.jar').read_bytes()).hexdigest(), encoding='ascii')
 package_module('node-cockpit-system')
 package_module('node-cockpit-carrier')

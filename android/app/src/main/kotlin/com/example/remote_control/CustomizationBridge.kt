@@ -1,12 +1,17 @@
 package com.example.remote_control
 
 import android.content.Context
+import android.content.BroadcastReceiver
+import android.content.Intent
+import android.content.IntentFilter
+import io.flutter.plugin.common.EventChannel
 import android.app.Activity
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import com.nodecockpit.customization.EdgeBuiltinShortcuts
 import com.nodecockpit.customization.LocalCustomization
 import com.nodecockpit.customization.PhotosSourcesControl
 import io.flutter.plugin.common.BinaryMessenger
@@ -22,7 +27,21 @@ class CustomizationBridge(private val context: Context, messenger: BinaryMesseng
     private val deviceSnapshot = DeviceSnapshot(context.applicationContext)
     private var notificationPermissionResult: MethodChannel.Result? = null
     companion object { private const val NOTIFICATION_PERMISSION_REQUEST = 59173 }
+    private val shelfEvents=EventChannel(messenger,"remote_control/clipboard_shelf_events")
+    private var shelfReceiver:BroadcastReceiver?=null
+    private fun stopShelfEvents(){shelfReceiver?.let{runCatching{context.unregisterReceiver(it)}};shelfReceiver=null}
     init {
+        shelfEvents.setStreamHandler(object:EventChannel.StreamHandler{
+            override fun onListen(arguments:Any?,events:EventChannel.EventSink){
+                stopShelfEvents()
+                shelfReceiver=object:BroadcastReceiver(){override fun onReceive(c:Context,i:Intent){events.success(null)}}.also{
+                    val filter=IntentFilter("com.example.remote_control.CLIPBOARD_SHELF_CHANGED")
+                    if(Build.VERSION.SDK_INT>=33)context.registerReceiver(it,filter,Context.RECEIVER_NOT_EXPORTED) else context.registerReceiver(it,filter)
+                }
+            }
+            override fun onCancel(arguments:Any?){stopShelfEvents()}
+        })
+
         LocalCustomization.initialize(context)
         channel.setMethodCallHandler { call, result ->
             if (call.method == "requestSampleNotificationPermission") {
@@ -66,6 +85,13 @@ class CustomizationBridge(private val context: Context, messenger: BinaryMesseng
                         "saveDeviceSnapshot" -> deviceSnapshot.saveBaseline(call.argument<Boolean>("includeModules") == true)
                         "captureDeviceSnapshot" -> deviceSnapshot.capture(call.argument<Boolean>("includeModules") == true)
                         "photosSourcesStatus" -> PhotosSourcesControl.status(context)
+                        "otaDevice" -> {
+                            val rootVersion = runCatching {
+                                context.packageManager.getPackageInfo("me.weishu.kernelsu", 0).versionName
+                            }.getOrNull() ?: ""
+                            JSONObject().put("device", Build.DEVICE).put("build", Build.FINGERPRINT)
+                                .put("timestamp", Build.TIME / 1000).put("kernelSuVersion", rootVersion)
+                        }
                         "savePhotosSources" -> PhotosSourcesControl.save(
                             context, JSONObject(requireNotNull(call.argument<String>("config"))))
                         "openGooglePhotos" -> {
@@ -94,6 +120,36 @@ class CustomizationBridge(private val context: Context, messenger: BinaryMesseng
                         "restoreSetup" -> LocalCustomization.restoreSetup(call.argument<String>("id"), call.argument<String>("scope") ?: "all")
                         "restartSystemUi" -> LocalCustomization.restartSystemUi()
                         "install" -> LocalCustomization.install()
+                        "edgeActions" -> LocalCustomization.edgeActionSettings()
+                        "saveEdgeActions" -> LocalCustomization.saveEdgeActionSettings(call.argument<String>("raw") ?: error("Missing panel actions"))
+                        "addClipboardEdgeShortcut" -> LocalCustomization.addClipboardEdgeShortcut()
+                        "clipboardApps" -> launcherApps(true,false)
+                        "clipboardShelf" -> {
+                            val extras=android.os.Bundle().apply {
+                                putString("query",call.argument<String>("query") ?: "")
+                                putBoolean("pinned",call.argument<Boolean>("pinned") == true)
+                                putLong("id",call.argument<Number>("id")?.toLong() ?: 0)
+                                putBoolean("value",call.argument<Boolean>("value") == true)
+                                putBoolean("includePins",call.argument<Boolean>("includePins") == true)
+                                call.argument<String>("config")?.let{putString("config",it)}
+                            }
+                            val op=call.argument<String>("op") ?: "list"
+                            require(op in setOf("list","configure","pin","delete","clear","copy","detail"))
+                            val response=context.contentResolver.call(android.net.Uri.parse("content://${context.packageName}.clipboard.shelf"),op,null,extras)
+                            JSONObject(response?.getString("data") ?: error("Clipboard shelf unavailable"))
+                        }
+                        "batteryUsage", "batteryUsageConfigure" -> {
+                            val extras=android.os.Bundle().apply {
+                                putLong("session",call.argument<Number>("session")?.toLong() ?: 0)
+                                putBoolean("enabled",call.argument<Boolean>("enabled") == true)
+                                putBoolean("estimates",call.argument<Boolean>("estimates") == true)
+                            }
+                            val response=context.contentResolver.call(android.net.Uri.parse("content://${context.packageName}.battery.usage"),
+                                if(call.method=="batteryUsage")"get" else "configure",null,extras)
+                            JSONObject(response?.getString("data") ?: error("Battery tracker unavailable"))
+                        }
+                        "carrierCatalog" -> LocalCustomization.carrierCatalog(call.argument<String>("query") ?: "")
+                        "configureCarriers" -> LocalCustomization.configureCarriers(call.argument<String>("carriers"))
                         "installCarrier" -> LocalCustomization.installCarrier()
                         "enableCarrier" -> LocalCustomization.setCarrierEnabled(true)
                         "disableCarrier" -> LocalCustomization.setCarrierEnabled(false)
@@ -102,7 +158,7 @@ class CustomizationBridge(private val context: Context, messenger: BinaryMesseng
                         "installVector" -> { LocalCustomization.openVectorDownload(context); JSONObject() }
                         "installKernelSu" -> { LocalCustomization.openKernelSuDownload(context); JSONObject() }
                         "kernelSu" -> { LocalCustomization.openKernelSu(context); JSONObject() }
-                        "launcherApps" -> launcherApps(call.argument<Boolean>("includeSelf") == true)
+                        "launcherApps" -> launcherApps(call.argument<Boolean>("includeSelf") == true,builtins=call.argument<Boolean>("edgeShortcuts") == true)
                         else -> error("Unsupported customization operation")
                     }
                     main.post { result.success(value.toString()) }
@@ -117,7 +173,7 @@ class CustomizationBridge(private val context: Context, messenger: BinaryMesseng
         try { result.success(LocalCustomization.notificationUndoState().toString()) }
         catch (e: Exception) { result.error("CUSTOMIZATION_FAILED", e.message, null) }
     }
-    private fun launcherApps(includeSelf: Boolean = false): JSONObject {
+    private fun launcherApps(includeSelf: Boolean = false, icons: Boolean = true, builtins: Boolean = false): JSONObject {
         val intent = android.content.Intent(android.content.Intent.ACTION_MAIN).addCategory(android.content.Intent.CATEGORY_LAUNCHER)
         val seen = HashSet<String>()
         val apps = JSONArray()
@@ -127,9 +183,13 @@ class CustomizationBridge(private val context: Context, messenger: BinaryMesseng
                 val packageName = info.activityInfo.packageName
                 if ((includeSelf || packageName != context.packageName) && seen.add(packageName)) {
                     apps.put(JSONObject().put("package", packageName).put("label", info.loadLabel(context.packageManager).toString())
-                        .put("icon", launcherIcon(info.loadIcon(context.packageManager))))
+                        .apply{if(icons)put("icon", launcherIcon(info.loadIcon(context.packageManager)))})
                 }
             }
+        if(builtins){
+            apps.put(JSONObject().put("package",EdgeBuiltinShortcuts.CLIPBOARD).put("label",EdgeBuiltinShortcuts.LABEL).put("builtin",true)
+                .put("icon",launcherIcon(context.packageManager.getApplicationIcon(context.packageName))))
+        }
         return JSONObject().put("apps", apps)
     }
     private fun launcherIcon(drawable: android.graphics.drawable.Drawable): String {
@@ -139,5 +199,5 @@ class CustomizationBridge(private val context: Context, messenger: BinaryMesseng
         val bytes = java.io.ByteArrayOutputStream(); bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 90, bytes); bitmap.recycle()
         return android.util.Base64.encodeToString(bytes.toByteArray(), android.util.Base64.NO_WRAP)
     }
-    fun detach() { channel.setMethodCallHandler(null); worker.shutdown() }
+    fun detach() { stopShelfEvents(); shelfEvents.setStreamHandler(null); channel.setMethodCallHandler(null); worker.shutdown() }
 }

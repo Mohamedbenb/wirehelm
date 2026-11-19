@@ -19,6 +19,8 @@ import 'bluetooth_devices_screen.dart';
 import 'remote_keyboard_screen.dart';
 import 'remote_media_screen.dart';
 import 'sftp_screen.dart';
+import 'remote_downloads_screen.dart';
+import 'ota_preparation_screen.dart';
 import 'windows_text_size_screen.dart';
 import 'performance_screen.dart';
 import 'remote_screenshot_screen.dart';
@@ -1203,6 +1205,8 @@ class _ControlsScreenState extends State<ControlsScreen>
       'terminal',
       'keyboard',
       'files',
+      'remote_downloads',
+      'ota_preparation',
       'screenshot',
       'media',
       'text_size',
@@ -1253,6 +1257,14 @@ class _ControlsScreenState extends State<ControlsScreen>
               session: _session,
               peerDevices: widget.peerDevices,
             );
+          case 'remote_downloads':
+            screen = RemoteDownloadsScreen(
+              device: _device,
+              session: _session,
+              peerDevices: widget.peerDevices,
+            );
+          case 'ota_preparation':
+            screen = OtaPreparationScreen(device: _device, session: _session);
           case 'screenshot':
             screen = RemoteScreenshotScreen(device: _device, session: _session);
           case 'desktop':
@@ -1493,6 +1505,16 @@ class _ControlsScreenState extends State<ControlsScreen>
         icon: Icons.keyboard_outlined,
       ),
       (action: 'files', title: 'Files · SFTP', icon: Icons.folder_outlined),
+      (
+        action: 'remote_downloads',
+        title: 'Remote downloads',
+        icon: Icons.download_outlined,
+      ),
+      (
+        action: 'ota_preparation',
+        title: 'Prepare rooted OTA',
+        icon: Icons.security,
+      ),
       (
         action: 'screenshot',
         title: 'Screenshot',

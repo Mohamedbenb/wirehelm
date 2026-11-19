@@ -21,7 +21,7 @@ public final class BootRecoveryJobService extends JobService {
 
     @Override public boolean onStartJob(JobParameters params) {
         Thread worker=new Thread(() -> {
-            try { LocalCustomization.recoverMissingBootHook(); }
+            try (ProcessWork.Token work=ProcessWork.begin("boot recovery job")) { LocalCustomization.recoverMissingBootHook(); }
             finally { jobFinished(params,false); }
         },"NodeCockpitBootRecovery");
         worker.start();

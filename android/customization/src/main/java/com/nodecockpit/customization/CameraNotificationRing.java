@@ -14,7 +14,10 @@ final class CameraNotificationRing {
     private final java.util.function.BooleanSupplier allowed;
     private final CameraRingAmbientController ambient;
     private final DisplayManager displays;private final PowerManager power;
-    private WindowManager windows;private Ring view;private Context windowContext;
+    private WindowManager windows;private Context windowContext;
+    private final CameraRingWindow<Ring> ringWindow=new CameraRingWindow<>();
+    private String cleanupError="";private int windowCreates,windowRemoves,cleanupRetries;
+    private final Runnable retryRemoval=()->safe(()->{remove();notifyChange();});
     private CameraRingSettings settings=CameraRingSettings.safe(CameraRingSettings.DEFAULT);
     private String raw="",reason="disabled",failure="",notificationError="",winner="";
     private Collection<CameraRingSelection.Notice> notices=Collections.emptyList();
@@ -51,10 +54,11 @@ final class CameraNotificationRing {
         if(active&&!listening){displays.registerDisplayListener(listener,handler);listening=true;}
         if(!active&&listening){displays.unregisterDisplayListener(listener);listening=false;}
         Display d=displays.getDisplay(0);int state=d==null?Display.STATE_UNKNOWN:d.getState();
-        String why=!active?"disabled":!failure.isEmpty()?"unavailable":next.isEmpty()?"no matching notifications":d==null?"no display":power.isInteractive()?"screen awake":d.getRotation()!=0?"portrait only":!CameraRingAodPolicy.canDraw(false,state,d.getRotation())?"waiting for AOD":"showing";
+        String why=!active?"disabled":(!failure.isEmpty()||!cleanupError.isEmpty())?"unavailable":next.isEmpty()?"no matching notifications":d==null?"no display":power.isInteractive()?"screen awake":d.getRotation()!=0?"portrait only":!CameraRingAodPolicy.canDraw(false,state,d.getRotation())?"waiting for AOD":"showing";
         boolean transition=!why.equals(reason);reason=why;
         if(!why.equals("showing")){remove();if(transition||newWinner)notifyChange();return;}
-        if(view==null){pulseStart=SystemClock.uptimeMillis();attach(d);view.invalidate();handler.postDelayed(pulse,CameraRingPulse.delay(0,settings.intervalMs));}
+        Ring view=ringWindow.get();
+        if(view==null){pulseStart=SystemClock.uptimeMillis();attach(d);ringWindow.get().invalidate();handler.postDelayed(pulse,CameraRingPulse.delay(0,settings.intervalMs));}
         else {view.style();view.invalidate();}
         if(transition||newWinner)notifyChange();
     }
@@ -67,23 +71,39 @@ final class CameraNotificationRing {
         // Fixed maximum-thickness margin: tuning never moves/recreates the window.
         int pad=(int)Math.ceil(14*windowContext.getResources().getDisplayMetrics().density);
         Rect box=new Rect();bounds.roundOut(box);box.inset(-pad,-pad);box.top=Math.max(0,box.top);
-        view=new Ring(windowContext,contour,bounds,box);view.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        Ring view=new Ring(windowContext,contour,bounds,box);view.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         WindowManager.LayoutParams p=new WindowManager.LayoutParams(box.width(),box.height(),2024,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE|WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN|WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,PixelFormat.TRANSLUCENT);
         p.gravity=Gravity.TOP|Gravity.LEFT;p.x=box.left;p.y=box.top;p.layoutInDisplayCutoutMode=WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS;p.setFitInsetsTypes(0);
-        WindowManager.LayoutParams.class.getField("privateFlags").setInt(p,0x21000050);p.setTitle("NodeCockpit.NotificationRing");windows.addView(view,p);
+        WindowManager.LayoutParams.class.getField("privateFlags").setInt(p,0x21000050);p.setTitle("NodeCockpit.NotificationRing");
+        WindowManager owner=windows;ringWindow.claim(view,()->owner.removeViewImmediate(view));
+        windows.addView(view,p);windowCreates++;cleanupRetries=0;
     }
     private void step()throws Exception{
         if(testUntil>0&&!testing())testUntil=0;
-        if(view==null)return;
+        Ring view=ringWindow.get();if(view==null)return;
         Display d=displays.getDisplay(0);int state=d==null?0:d.getState();
         if(blocked||!allowed.getAsBoolean()||d==null||!CameraRingAodPolicy.canDraw(power.isInteractive(),state,d.getRotation())||!settings.enabled&&!testing()){render();return;}
         pulseUpdates++;view.invalidate();handler.postDelayed(pulse,CameraRingPulse.delay(SystemClock.uptimeMillis()-pulseStart,settings.intervalMs));
     }
-    private void remove(){handler.removeCallbacks(pulse);if(view!=null){Ring old=view;view=null;try{if(old.isAttachedToWindow())windows.removeViewImmediate(old);}catch(RuntimeException e){failure="Window cleanup: "+e.getClass().getSimpleName();}}windows=null;windowContext=null;pulseStart=0;}
+    private void remove(){
+        handler.removeCallbacks(pulse);handler.removeCallbacks(retryRemoval);
+        Ring old=ringWindow.get();
+        if(old!=null){
+            // Hide even before first attachment, then unregister the owned window.
+            old.setVisibility(View.GONE);
+            try{ringWindow.release();windowRemoves++;cleanupError="";}
+            catch(RuntimeException e){
+                cleanupError=e.getClass().getSimpleName();
+                if(cleanupRetries++<3)handler.postDelayed(retryRemoval,100);
+                return;
+            }
+        }
+        windows=null;windowContext=null;pulseStart=0;
+    }
     private void safe(Throwing action){try{action.run();}catch(Throwable e){failure=e.getClass().getSimpleName()+": "+e.getMessage();reason="unavailable";ambient.cancel("ring unavailable");remove();notifyChange();}}
     private interface Throwing{void run()throws Exception;}
     private void notifyChange(){android.util.Log.i("NodeCameraRing",diagnostics());handler.post(changed);}
-    String diagnostics(){int priority=selected==null?0:settings.apps.get(selected.pkg).priority;return "state="+reason+",winner="+winner+",priority="+priority+",pending="+notices.size()+",draws="+draws+",pulseUpdates="+pulseUpdates+",fadeMs="+settings.intervalMs+",test="+testing()+",error="+failure+",notificationsError="+notificationError+",ambient="+ambient.diagnostics();}
+    String diagnostics(){int priority=selected==null?0:settings.apps.get(selected.pkg).priority;return "state="+reason+",winner="+winner+",priority="+priority+",pending="+notices.size()+",draws="+draws+",pulseUpdates="+pulseUpdates+",fadeMs="+settings.intervalMs+",test="+testing()+",error="+failure+",windowOwned="+(ringWindow.get()!=null)+",windowAttached="+(ringWindow.get()!=null&&ringWindow.get().isAttachedToWindow())+",windowCreates="+windowCreates+",windowRemoves="+windowRemoves+",cleanupRetries="+cleanupRetries+",cleanupError="+cleanupError+",notificationsError="+notificationError+",ambient="+ambient.diagnostics();}
     private final class Ring extends View {
         final Path original,path=new Path();final RectF bounds;final Rect box;final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);
         Ring(Context c,Path contour,RectF b,Rect box){super(c);original=new Path(contour);bounds=new RectF(b);this.box=new Rect(box);style();}

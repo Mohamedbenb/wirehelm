@@ -4,15 +4,23 @@ package com.nodecockpit.customization;
 public final class FeaturePolicy {
     public static final int SCHEMA = 1;
     public static final int PROTOCOL = 1;
-    public static final int HOOK_VERSION = 190;
+    public static final int HOOK_VERSION = 197;
     public static final long SAFETY_LEASE_MS = 90000;
     public static final String GROUP = "node_cockpit_local_v1";
     public static final String ACTION_DISABLE = "com.nodecockpit.customization.DISABLE";
     public static final String TESTED_FINGERPRINT = "google/frankel/frankel:17/CP3A.261005.005/16271449:user/release-keys";
+    public static final String CP4A_FINGERPRINT = "google/frankel/frankel:17/CP4A.261105.040.A1/16581829:user/release-keys";
     /** Automatic suspension retains user intent; only explicit disable clears it. */
     public static boolean clearDesiredOnEmergency(String reason) { return "Disabled by user".equals(reason); }
     public static boolean supported(int sdk, String fingerprint) {
-        return sdk == 37 && TESTED_FINGERPRINT.equals(fingerprint);
+        return sdk == 37 && (TESTED_FINGERPRINT.equals(fingerprint) || CP4A_FINGERPRINT.equals(fingerprint));
+    }
+    /** Presence evidence only; never grants permission to activate a feature. */
+    public static boolean reportedProcessRunning(int boot, int reportedBoot, int pid, String runningPids) {
+        if (boot < 0 || boot != reportedBoot || pid <= 0 || runningPids == null) return false;
+        for (String value : runningPids.trim().split("\\s+"))
+            if (String.valueOf(pid).equals(value)) return true;
+        return false;
     }
     public static boolean valid(int interval, int threshold, int textSize) {
         return interval >= 500 && interval <= 5000 && threshold >= 0 && threshold <= 1024 && textSize >= 8 && textSize <= 18;

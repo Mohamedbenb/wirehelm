@@ -20,12 +20,14 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Runtime.InteropServices;
 [StructLayout(LayoutKind.Sequential)] public struct NcCursorInfo { public int cbSize; public int flags; public IntPtr hCursor; public Point ptScreenPos; }
+[StructLayout(LayoutKind.Sequential)] public struct NcMouseInput { public int dx,dy; public uint mouseData,dwFlags,time; public UIntPtr dwExtraInfo; }
+[StructLayout(LayoutKind.Sequential)] public struct NcInput { public uint type; public NcMouseInput mi; }
 [StructLayout(LayoutKind.Sequential)] public struct NcIconInfo { [MarshalAs(UnmanagedType.Bool)] public bool fIcon; public uint xHotspot; public uint yHotspot; public IntPtr hbmMask; public IntPtr hbmColor; }
 public static class NcDesktopInput {
  [DllImport("user32.dll")] static extern IntPtr SetThreadDpiAwarenessContext(IntPtr value);
- [DllImport("user32.dll")] public static extern bool SetCursorPos(int x,int y);
- [DllImport("user32.dll")] public static extern bool GetCursorPos(out Point point);
- [DllImport("user32.dll")] static extern bool GetCursorInfo(out NcCursorInfo info);
+ [DllImport("user32.dll",SetLastError=true)] static extern uint SendInput(uint count,NcInput[] inputs,int size);
+ [DllImport("user32.dll",SetLastError=true)] public static extern bool GetCursorPos(out Point point);
+ [DllImport("user32.dll",SetLastError=true)] static extern bool GetCursorInfo(ref NcCursorInfo info);
  [DllImport("user32.dll")] static extern bool GetIconInfo(IntPtr icon,out NcIconInfo info);
  [DllImport("user32.dll")] static extern bool DrawIconEx(IntPtr hdc,int x,int y,IntPtr icon,int width,int height,uint step,IntPtr brush,uint flags);
  [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr handle);
@@ -43,16 +45,53 @@ public static class NcDesktopInput {
   try { graphics.CopyFromScreen(bounds.Left,bounds.Top,0,0,bounds.Size); }
   finally { SetThreadDpiAwarenessContext(previous); }
  }
+ // Pixel-center normalization keeps SendInput exact across mixed-DPI/negative-origin desktops.
+ static int Normalize(int position,int origin,int extent) {
+  if(extent<=0) throw new ArgumentOutOfRangeException("extent");
+  var pixel=Math.Max(0L,Math.Min((long)extent-1,(long)position-origin));
+  return (int)Math.Min(65535L,((2*pixel+1)*65536L)/(2L*extent));
+ }
+ static NcInput MoveEvent(Rectangle bounds,int x,int y) {
+  var input=new NcInput();
+  input.mi.dx=Normalize(x,bounds.Left,bounds.Width);input.mi.dy=Normalize(y,bounds.Top,bounds.Height);
+  input.mi.dwFlags=0x0001|0x8000|0x4000; // MOVE | ABSOLUTE | VIRTUALDESK
+  return input;
+ }
+ static void SendMoves(params NcInput[] inputs) {
+  var size=Marshal.SizeOf(typeof(NcInput));
+  if(SendInput((uint)inputs.Length,inputs,size)!=(uint)inputs.Length) {
+   var error=Marshal.GetLastWin32Error();
+   // A partial recovery batch must make a bounded best effort to restore its final position.
+   if(inputs.Length>1) SendInput(1,new[]{inputs[inputs.Length-1]},size);
+   throw new System.ComponentModel.Win32Exception(error,"Windows did not accept the remote mouse input.");
+  }
+ }
  public static void Move(int x,int y) {
   var previous=SetThreadDpiAwarenessContext(new IntPtr(-4));
-  try { if(!SetCursorPos(x,y)) throw new System.ComponentModel.Win32Exception(); }
+  try { SendMoves(MoveEvent(Bounds(),x,y)); }
+  finally { SetThreadDpiAwarenessContext(previous); }
+ }
+ public static void EnsureCursorVisible() {
+  var previous=SetThreadDpiAwarenessContext(new IntPtr(-4));
+  try {
+   var cursor=new NcCursorInfo();cursor.cbSize=Marshal.SizeOf(typeof(NcCursorInfo));
+   if(!GetCursorInfo(ref cursor)) throw new System.ComponentModel.Win32Exception();
+   if((cursor.flags&2)==0) return; // Recover OS suppression; leave application-hidden cursors alone.
+   var bounds=Bounds();if(bounds.Width<=1&&bounds.Height<=1) return;
+   var x=Math.Max(bounds.Left,Math.Min(bounds.Right-1,cursor.ptScreenPos.X));
+   var y=Math.Max(bounds.Top,Math.Min(bounds.Bottom-1,cursor.ptScreenPos.Y));
+   var nx=x;var ny=y;
+   if(bounds.Width>1) nx=x<bounds.Right-1?x+1:x-1;else ny=y<bounds.Bottom-1?y+1:y-1;
+   // Zero-delta input does not clear suppression on this host. Use a real bounded move and return.
+   SendMoves(MoveEvent(bounds,nx,ny),MoveEvent(bounds,x,y));
+  }
   finally { SetThreadDpiAwarenessContext(previous); }
  }
  public static void DrawCursor(Graphics graphics, Rectangle bounds) {
   var previous=SetThreadDpiAwarenessContext(new IntPtr(-4));
   try {
    var cursor=new NcCursorInfo(); cursor.cbSize=Marshal.SizeOf(typeof(NcCursorInfo));
-   if(!GetCursorInfo(out cursor) || (cursor.flags & 1)==0 || cursor.hCursor==IntPtr.Zero) return;
+   if(!GetCursorInfo(ref cursor) || (cursor.flags & 1)==0 || cursor.hCursor==IntPtr.Zero) return;
    NcIconInfo iconInfo;
    if(!GetIconInfo(cursor.hCursor,out iconInfo)) throw new System.ComponentModel.Win32Exception();
    try {
@@ -66,7 +105,7 @@ public static class NcDesktopInput {
  }
  public static void MoveRelative(int x,int y) {
   var previous=SetThreadDpiAwarenessContext(new IntPtr(-4));
-  try { Point point; if(!GetCursorPos(out point)) throw new System.ComponentModel.Win32Exception(); if(!SetCursorPos(point.X+x,point.Y+y)) throw new System.ComponentModel.Win32Exception(); }
+  try { Point point; if(!GetCursorPos(out point)) throw new System.ComponentModel.Win32Exception(); SendMoves(MoveEvent(Bounds(),point.X+x,point.Y+y)); }
   finally { SetThreadDpiAwarenessContext(previous); }
  }
  public static void Down(uint button) {
@@ -94,6 +133,8 @@ $quality=[System.Drawing.Imaging.EncoderParameters]::new(1); $quality.Param[0]=[
 $frame=Join-Path $root 'frame.jpg'; $frameTmp=Join-Path $root 'frame.tmp'; $sequence=Join-Path $root 'frame.seq'; $sequenceTmp=Join-Path $root 'frame.seq.tmp'; $errorPath=Join-Path $root 'error.txt'; $heartbeat=Join-Path $root 'heartbeat'
 $seq=0; $nextControl=1
 try {
+ # Activate the actual Windows pointer once; never synthesize activity from frame capture.
+ try { [NcDesktopInput]::EnsureCursorVisible() } catch { [IO.File]::WriteAllText($errorPath,$_.Exception.Message) }
  while ($true) {
   if (-not (Test-Path $root) -or -not (Test-Path $heartbeat) -or (Get-Item $heartbeat).LastWriteTime -lt (Get-Date).AddSeconds(-6)) { break }
   # Apply queued controls before doing the next expensive screen capture so
@@ -102,6 +143,7 @@ try {
    $controlPath=Join-Path $root ('control_'+$nextControl+'.json')
    try {
     $control=Get-Content -LiteralPath $controlPath -Raw | ConvertFrom-Json
+    if($control.action -notin @('up','upAtCursor')) { [NcDesktopInput]::EnsureCursorVisible() }
     $x=$bounds.Left+[int][Math]::Round([Math]::Max([double]0,[Math]::Min([double]1,[double]$control.x))*($bounds.Width-1))
     $y=$bounds.Top+[int][Math]::Round([Math]::Max([double]0,[Math]::Min([double]1,[double]$control.y))*($bounds.Height-1))
     $button= switch ($control.button) { 'right' { 8 } 'middle' { 32 } default { 2 } }
@@ -110,11 +152,11 @@ try {
      'clickAtCursor' { [NcDesktopInput]::Click([uint32]$button) }
      'downAtCursor' { [NcDesktopInput]::Down([uint32]$button) }
      'upAtCursor' { [NcDesktopInput]::Up([uint32]($button*2)) }
+     'up' { try { [NcDesktopInput]::Move($x,$y) } finally { [NcDesktopInput]::Up([uint32]($button*2)) } }
      default {
       [NcDesktopInput]::Move($x,$y)
       switch ($control.action) {
        'down' { [NcDesktopInput]::Down([uint32]$button) }
-       'up' { [NcDesktopInput]::Up([uint32]($button*2)) }
        'click' { [NcDesktopInput]::Click([uint32]$button) }
        'move' { }
        'wheel' { $wheel=if($control.delta -gt 0){-120}else{120}; [NcDesktopInput]::mouse_event(2048,0,0,$wheel,[UIntPtr]::Zero) }
