@@ -33,6 +33,9 @@
         android:label="Wirehelm"
         android:name="com.nodecockpit.customization.CustomizationApplication"
         android:icon="@mipmap/ic_launcher">
+        <provider android:name=".EdgeControlsProvider"
+            android:authorities="${applicationId}.edge.controls"
+            android:exported="true" />
         <provider android:name=".clipboard.ClipboardShelfProvider" android:process=":clipboard" android:exported="true" android:authorities="${applicationId}.clipboard.shelf" />
         <provider android:name=".clipboard.ClipboardImageProvider" android:process=":clipboard" android:exported="false" android:grantUriPermissions="true" android:authorities="${applicationId}.clipboard.files">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/clipboard_paths" />
@@ -78,6 +81,13 @@
             android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/app_update_paths" />
         </provider>
+
+        <activity
+            android:name=".EdgeDesktopUnlockActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:taskAffinity="${applicationId}.edge_unlock"
+            android:theme="@android:style/Theme.DeviceDefault.Dialog" />
 
         <activity
             android:name=".MainActivity"

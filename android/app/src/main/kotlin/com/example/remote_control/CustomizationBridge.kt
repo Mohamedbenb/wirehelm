@@ -122,6 +122,11 @@ class CustomizationBridge(private val context: Context, messenger: BinaryMesseng
                         "install" -> LocalCustomization.install()
                         "edgeActions" -> LocalCustomization.edgeActionSettings()
                         "saveEdgeActions" -> LocalCustomization.saveEdgeActionSettings(call.argument<String>("raw") ?: error("Missing panel actions"))
+                        "setEdgeControlVisibility" -> LocalCustomization.setEdgeControlVisibility(
+                            requireNotNull(call.argument<String>("control")),
+                            requireNotNull(call.argument<Boolean>("shown")),
+                            call.argument<String>("device") ?: ""
+                        )
                         "addClipboardEdgeShortcut" -> LocalCustomization.addClipboardEdgeShortcut()
                         "clipboardApps" -> launcherApps(true,false)
                         "clipboardShelf" -> {

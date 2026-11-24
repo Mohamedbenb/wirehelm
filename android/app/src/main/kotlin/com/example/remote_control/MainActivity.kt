@@ -47,6 +47,7 @@ class MainActivity : FlutterActivity() {
             flutterEngine
         )
         ScreenOffShutdown.attach(this)
+        EdgeControlsProvider.attachApp(flutterEngine.dartExecutor.binaryMessenger)
         val workMessenger = SleepAwareMessenger(flutterEngine.dartExecutor.binaryMessenger)
         tsnetBridge = TsnetBridge(this, workMessenger)
         remoteAudioBridge = RemoteAudioBridge(workMessenger)
@@ -151,6 +152,7 @@ class MainActivity : FlutterActivity() {
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
         val cleanup = ScreenOffShutdown.begin("native engine cleanup")
         try {
+        EdgeControlsProvider.detachApp(flutterEngine.dartExecutor.binaryMessenger)
         desktopUnlockBridge?.detach()
         desktopUnlockBridge = null
         appNetworkBridge?.detach()

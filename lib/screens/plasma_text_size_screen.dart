@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../services/plasma_settings.dart';
+import '../widgets/edge_panel_control_toggle.dart';
 
 class PlasmaTextSizeScreen extends StatefulWidget {
   const PlasmaTextSizeScreen({super.key, required this.settings});
@@ -74,6 +75,10 @@ class _PlasmaTextSizeScreenState extends State<PlasmaTextSizeScreen> {
         child: ListView(
           padding: const EdgeInsets.all(20),
           children: [
+            EdgePanelControlToggle(
+              control: EdgePanelControl.textSize,
+              deviceId: widget.settings.device.id,
+            ),
             if (_busy) const LinearProgressIndicator(),
             if (_active != null)
               Text('General font · ${_label(_active!)} · $_family'),

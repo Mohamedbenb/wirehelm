@@ -1,5 +1,22 @@
 # Edge panel shortcuts and action controls
 
+## Shortcut capacity
+
+In **Edit**, the panel shows the number of shortcuts used out of 12. Each app inside a folder counts as a shortcut. When the list is full, tapping or holding a new app in the **Add** catalog shows a prompt to remove a shortcut first. Existing shortcuts can still be rearranged. Tap **Save** to commit your edits.
+
+## Controls page
+
+Open the Edge panel and tap **Controls** above the shortcuts. Tap a row to open its controls in place. Back returns to the list, then to shortcuts. Use **Show in Edge panel** on the Wirehelm Smart bulb, Remote keyboard, Plasma text size, or Power controls page to change its visibility. Enabling a control uses the current device if no host has been selected. You can also edit the list in **Settings → Controls list** in the panel. Smart bulb, PC power, and PC text size are enabled by default. Remote keyboard is optional.
+
+Select hosts under **UI features → Edge panel → Panel actions**. The bulb uses a Linux host where it is already configured. The PC host is a saved CachyOS device that supplies both PC pages. Remote keyboard has a separate desktop selection. Unconfigured pages show a shortcut to Panel actions.
+
+- **Smart bulb** offers power, brightness, white temperature, hue, and saturation. Sliders update while you drag.
+- **PC power** offers Lock, Unlock PC, Sleep, Lock & sleep, Restart, and Shut down. If Plasma is locked, Unlock PC asks you to authenticate on the phone before it unlocks and wakes the display. The page shows the selected PC and asks for confirmation before sending an action. If the PC requires interactive authorization, use Power in Wirehelm.
+- **PC text size** reads the current Plasma font size and applies an adjustable value in half-point increments. You can also select the 10 pt default.
+- **Remote keyboard** sends a text draft or common keys to the selected SSH desktop. The draft stays in the page until you tap Send text and is cleared when you leave. KDE Wayland uses the saved keyboard approval when available. If KDE prompts again, approve access on the PC while the panel is open.
+
+The pages prefer an existing Wirehelm SSH connection for the selected device, with its saved endpoint, account, and verified host key. When none matches, the panel opens its own connection and can reuse it across pages on that host for up to 25 seconds of inactivity. Leaving the panel never disconnects the app’s session.
+
 ## Clipboard shelf shortcut
 
 Use **Clipboard shelf → Shelf options → Add to Edge panel** to append Clipboard shelf to default Favorites. It preserves existing entries/folders, does not duplicate a shortcut already present in a folder, does not enable a disabled panel and reports a full 12-shortcut list rather than dropping another item. App-specific lists can override Favorites: add Clipboard shelf to those lists separately if needed.
@@ -14,7 +31,7 @@ Open **UI features → Edge panel → Panel actions**, or hold a normal bottom a
 
 Columns are capped by actual usable panel width to maintain 48 dp touch targets. The card adds its clipped overhang to both width and padding, so it cancels: usable width is configured panel width minus 24 dp horizontal padding. A 140 dp panel fits two columns; four needs at least 216 dp. The saved column count is an upper limit when the panel is too narrow. Long action sections scroll within a bounded footer, leaving space for shortcuts. Save/Cancel in editing and Back/Add in window mode remain available regardless of normal-action visibility. If Edit is hidden, the existing panel long-press still enters editing; Wirehelm's app settings remain available even with every action hidden.
 
-Icons share a 24-unit viewport, consistent two-unit strokes, rounded joins, centered sizing and spacing, with a symmetric settings gear and a clipboard glyph. Action rows use transparent, rounded, contrast-aware pressed feedback and accessible labels. Bottom-action vectors bypass the legacy multi-copy ink outline; their labels use a subtle shadow rather than that outline. Existing shortcut/title contrast protection is unchanged. The panel/handle glass engines, materials and their saved parameters are unchanged. Configuration updates rebuild toolbar content, not the material backend.
+Action and control glyphs use a 24-unit vector viewport, rounded joins, a thin continuous contrast edge, and a soft shadow. The glyph color follows the panel’s adaptive setting or its chosen text tone. Adaptive app icons retain their native artwork with a subtle shadow behind the app mask. Action rows use transparent, rounded pressed feedback and accessible labels. Titles, shortcut labels, toolbar text, search, folders, and control pages share the Favorites text outline and shadow. The panel/handle glass engines, materials and their saved parameters are unchanged. Configuration updates rebuild toolbar content, not the material backend.
 
 Settings are stored in the independent `edgePanelActions` JSON field and included in Edge saved setups. Existing configurations default safely. The hook validates IDs, duplicates, sizes and dimensions; bad hook snapshots fall back to defaults. Unsupported Windows controls are omitted without rewriting the saved order.
 

@@ -687,9 +687,22 @@ public final class LocalCustomization {
             save(current);publish();Bundle result=new Bundle();result.putLong("revision",store(app).getLong("revision",0));return result;
         }
     }
+    public static String edgeControlDevice(Context context, String control) {
+        SharedPreferences settings=store(context);
+        if (!settings.getBoolean("edgePanelEnabled", false)||settings.getBoolean("emergency", false)) return "";
+        EdgeActionSettings actions=EdgeActionSettings.safe(settings.getString("edgePanelActions", EdgeActionSettings.DEFAULT));
+        return actions.controlDevice(control);
+    }
     public static JSONObject edgeActionSettings() throws Exception { return new JSONObject().put("raw",config(app).getString("edgePanelActions")); }
     public static JSONObject saveEdgeActionSettings(String raw) throws Exception {
         synchronized(LOCK){new EdgeActionSettings(raw);JSONObject current=config(app).put("edgePanelActions",raw);save(current);publish();app.getContentResolver().notifyChange(Uri.parse("content://com.example.remote_control.customization.health/configuration"),null);return edgeActionSettings();}
+    }
+    public static JSONObject setEdgeControlVisibility(String control, boolean shown, String device) throws Exception {
+        synchronized (LOCK) {
+            String raw=store(app).getString("edgePanelActions",EdgeActionSettings.DEFAULT);
+            String next=EdgeActionSettings.withControlVisibility(raw,control,shown,device);
+            return next.equals(raw)?edgeActionSettings():saveEdgeActionSettings(next);
+        }
     }
     public static JSONObject addClipboardEdgeShortcut() throws Exception {
         synchronized(LOCK){

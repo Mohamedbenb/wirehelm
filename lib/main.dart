@@ -8,6 +8,7 @@ import 'transport/tsnet_client.dart';
 
 import 'screens/local_customization_screen.dart';
 import 'services/app_settings.dart';
+import 'services/edge_controls.dart';
 import 'services/app_shortcut_navigation.dart';
 import 'screens/clipboard_shelf_screen.dart';
 import 'screens/edge_actions_screen.dart';
@@ -15,6 +16,7 @@ import 'screens/edge_actions_screen.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   appShortcutNavigation.attach();
+  attachSharedEdgeControls();
 
   LicenseRegistry.addLicense(() async* {
     yield LicenseEntryWithLineBreaks([
@@ -34,6 +36,9 @@ Future<void> main() async {
     );
   }
 }
+
+@pragma('vm:entry-point')
+Future<void> edgeControlsMain() => attachEdgeControls();
 
 class RemoteControlApp extends StatelessWidget {
   const RemoteControlApp({super.key});

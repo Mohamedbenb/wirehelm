@@ -140,8 +140,12 @@ final class EdgeWindowAppPicker extends LinearLayout {
                 row.addView(text, new LayoutParams(0, -2, 1));
             }
             App app = getItem(position);
-            ((ImageView) row.getChildAt(0)).setImageDrawable(app.info.loadIcon(packages));
-            ((TextView) row.getChildAt(1)).setText(app.label);
+            ImageView icon = (ImageView) row.getChildAt(0);
+            icon.setImageDrawable(app.info.loadIcon(packages));
+            EdgePanelInk.icon(icon, INK);
+            TextView label = (TextView) row.getChildAt(1);
+            label.setText(app.label);
+            EdgePanelInk.text(label, INK);
             return row;
         }
     }

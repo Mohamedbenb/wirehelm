@@ -4,7 +4,7 @@ package com.nodecockpit.customization;
 public final class FeaturePolicy {
     public static final int SCHEMA = 1;
     public static final int PROTOCOL = 1;
-    public static final int HOOK_VERSION = 197;
+    public static final int HOOK_VERSION = 204;
     public static final long SAFETY_LEASE_MS = 90000;
     public static final String GROUP = "node_cockpit_local_v1";
     public static final String ACTION_DISABLE = "com.nodecockpit.customization.DISABLE";
@@ -38,10 +38,14 @@ public final class FeaturePolicy {
     }
     public static boolean validEdgeTintMode(String mode) { return "auto".equals(mode)||"contrast".equals(mode)||"light".equals(mode)||"dark".equals(mode); }
     public static boolean validEdgeSide(String side) { return "left".equals(side)||"right".equals(side); }
+    static final int MAX_EDGE_SHORTCUTS = 12;
+    static int countEdgeShortcuts(String apps) {
+        return apps.isEmpty() ? 0 : apps.split("[,+]",-1).length;
+    }
     public static boolean validEdgeApps(String apps) {
         if (apps==null||apps.length()>800) return false;
         if (apps.isEmpty()) return true;
-        String[] values=apps.split("[,+]",-1); if (values.length>12) return false;
+        String[] values=apps.split("[,+]",-1); if (values.length>MAX_EDGE_SHORTCUTS) return false;
         for (String value:values) if (!value.matches("[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)+")) return false;
         return true;
     }

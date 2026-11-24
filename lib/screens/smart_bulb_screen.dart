@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../services/smart_bulb.dart';
+import '../widgets/edge_panel_control_toggle.dart';
 
 class SmartBulbScreen extends StatefulWidget {
   const SmartBulbScreen({super.key, required this.bulb});
@@ -237,6 +238,10 @@ class _SmartBulbScreenState extends State<SmartBulbScreen> {
         child: ListView(
           padding: const EdgeInsets.all(20),
           children: [
+            EdgePanelControlToggle(
+              control: EdgePanelControl.bulb,
+              deviceId: widget.bulb.device.id,
+            ),
             Text(
               'Via ${widget.bulb.device.name}',
               style: theme.textTheme.bodySmall,

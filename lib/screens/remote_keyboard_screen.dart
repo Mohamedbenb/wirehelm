@@ -10,6 +10,7 @@ import '../services/remote_keyboard.dart';
 import '../services/linux_desktop.dart';
 import '../services/wayland_access.dart';
 import '../ssh/ssh_session.dart';
+import '../widgets/edge_panel_control_toggle.dart';
 import '../widgets/wayland_access_button.dart';
 
 enum _KeyboardPad { keys, shortcuts }
@@ -705,6 +706,10 @@ class _RemoteKeyboardScreenState extends State<RemoteKeyboardScreen> {
         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         padding: const EdgeInsets.all(12),
         children: [
+          EdgePanelControlToggle(
+            control: EdgePanelControl.keyboard,
+            deviceId: widget.device.id,
+          ),
           Card(
             margin: EdgeInsets.zero,
             child: Padding(

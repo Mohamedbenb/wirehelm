@@ -38,6 +38,7 @@ import '../utils/command_parameters.dart';
 import '../utils/sudo_command.dart';
 import '../utils/command_transfer.dart';
 import '../widgets/app_update_banner.dart';
+import '../widgets/edge_panel_control_toggle.dart';
 
 enum _DeviceTab { tools, controls, commands }
 
@@ -1814,6 +1815,14 @@ class _ControlsScreenState extends State<ControlsScreen>
                       },
                     ),
                   ),
+                  if (cachyos)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: EdgePanelControlToggle(
+                        control: EdgePanelControl.power,
+                        deviceId: _device.id,
+                      ),
+                    ),
                 ],
               ),
             ),

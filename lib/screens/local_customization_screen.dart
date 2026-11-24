@@ -1048,13 +1048,20 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
                 final raw = await Navigator.of(context).push<String>(
                   MaterialPageRoute(
                     settings: const RouteSettings(name: edgeActionsRoute),
-                    builder: (_) => EdgeActionsScreen(
-                      initialRaw: config['edgePanelActions'] as String? ?? '{}',
-                    ),
+                    builder: (_) => const EdgeActionsScreen(),
                   ),
                 );
                 if (raw != null && mounted) {
-                  await _apply('edgePanelActions', raw);
+                  setState(
+                    () => _data = {
+                      ..._data,
+                      'config': {
+                        ..._section('config'),
+                        'edgePanelActions': raw,
+                      },
+                    },
+                  );
+                  _featureRevision.value++;
                 }
               },
       ),

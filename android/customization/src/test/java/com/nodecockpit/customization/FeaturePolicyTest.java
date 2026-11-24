@@ -29,6 +29,15 @@ public class FeaturePolicyTest {
         assertFalse(FeaturePolicy.validLayout(16,38,8,140,-9,6,6,0));
         assertFalse(FeaturePolicy.validLayout(16,38,8,300,0,6,6,0));
     }
+    @Test public void shortcutCapacityCountsEachFolderMember() {
+        String full="a.one+a.two,a.three,a.four,a.five,a.six,a.seven,a.eight,a.nine,a.ten,a.eleven,a.twelve";
+        assertEquals(0,FeaturePolicy.countEdgeShortcuts(""));
+        assertEquals(3,FeaturePolicy.countEdgeShortcuts("a.one+a.two,a.three"));
+        assertEquals(FeaturePolicy.MAX_EDGE_SHORTCUTS,FeaturePolicy.countEdgeShortcuts(full));
+        assertTrue(FeaturePolicy.validEdgeApps(full));
+        assertFalse(FeaturePolicy.validEdgeApps(full+",a.thirteen"));
+        assertTrue(FeaturePolicy.validEdgeApps(full.replace("a.two,","a.thirteen,")));
+    }
     @Test public void ratesUseElapsedTimeAndHandleCounterReset() {
         assertEquals("1K",FeaturePolicy.formatRate(2048,2000));
         assertEquals("2.0M",FeaturePolicy.formatRate(2097152,1000));

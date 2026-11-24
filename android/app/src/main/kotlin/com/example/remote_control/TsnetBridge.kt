@@ -18,7 +18,11 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /** Blocking Go calls run on workers; a read never blocks writes or socket close. */
-class TsnetBridge(context: Context, messenger: BinaryMessenger) {
+class TsnetBridge(
+    context: Context,
+    messenger: BinaryMessenger,
+    private val closeOwnedSockets: Boolean = false
+) {
     companion object {
         private val node = Tsnetbridge.newNode()
         private val workers = Executors.newCachedThreadPool()
@@ -45,6 +49,8 @@ class TsnetBridge(context: Context, messenger: BinaryMessenger) {
     private val appContext = context.applicationContext
     private val debugging = session(appContext)
     private val main = Handler(Looper.getMainLooper())
+    private val socketIds = mutableSetOf<Long>()
+    private var detached = false
     private val channel = MethodChannel(messenger, "remote_control/tsnet")
     private val lanDiscovery = LanDiscovery(appContext)
 
@@ -80,12 +86,17 @@ class TsnetBridge(context: Context, messenger: BinaryMessenger) {
                             "peers" -> node.peers()
                             "lanInfo" -> TsnetNetworkMonitor.snapshot(appContext)
                             "dial" -> node.dial(call.argument<String>("host") ?: "",
-                                number(call, "port", 22), number(call, "timeoutMs", 10000))
+                                number(call, "port", 22), number(call, "timeoutMs", 10000)).also(::trackSocket)
                             "read" -> node.read(number(call, "id"), number(call, "maxBytes", 65536),
                                 number(call, "timeoutMs", 1000))
                             "write" -> node.write(number(call, "id"), call.argument<ByteArray>("data")
                                 ?: throw IllegalArgumentException("Missing data"), number(call, "timeoutMs", 10000))
-                            "close" -> { node.closeConnection(number(call, "id")); null }
+                            "close" -> {
+                                val id = number(call, "id")
+                                synchronized(socketIds) { socketIds.remove(id) }
+                                node.closeConnection(id)
+                                null
+                            }
                             "debugStatus" -> debugging.status()
                             "setDebugResume" -> debugging.setResumeAfterUpdate(call.argument<Boolean>("enabled") == true)
                             "setDebugRelayDuration" -> debugging.setDuration(number(call, "minutes"))
@@ -111,7 +122,25 @@ class TsnetBridge(context: Context, messenger: BinaryMessenger) {
 
     // Activity/engine recreation must not destroy the process-owned identity or sockets.
 
+    private fun trackSocket(id: Long) {
+        if (!closeOwnedSockets) return
+        synchronized(socketIds) {
+            if (!detached) {
+                socketIds.add(id)
+                return
+            }
+        }
+        node.closeConnection(id)
+    }
+
     fun detach() {
+        if (closeOwnedSockets) {
+            val ids = synchronized(socketIds) {
+                detached = true
+                socketIds.toList().also { socketIds.clear() }
+            }
+            workers.execute { ids.forEach { runCatching { node.closeConnection(it) } } }
+        }
         channel.setMethodCallHandler(null)
         lanDiscovery.close()
         TsnetNetworkMonitor.release(this)

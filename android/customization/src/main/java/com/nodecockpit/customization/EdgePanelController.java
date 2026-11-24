@@ -39,6 +39,10 @@ final class EdgePanelController {
     private final EdgeFloatingWindows floatingWindows;
     private LinearLayout windowShelf;
     private boolean windowsMode;
+    private TextView controlsLink;
+    private EdgeControlList controlList;
+    private EdgeControlPage controlDetail;
+    private EdgeControlList.Entry controlEntry;
     private View windowDialogCard;
     private int windowDialogHeightDp;
     private EditText appSearch;
@@ -53,8 +57,6 @@ final class EdgePanelController {
     private String previewTarget;
     private View headerSeparator,actionSeparator; private final ArrayList<TextView> adaptiveLabels=new ArrayList<>();
     private final ArrayList<ImageView> adaptiveIcons=new ArrayList<>();
-    private final java.util.WeakHashMap<View,android.graphics.drawable.Drawable> nativeLabelOriginal=new java.util.WeakHashMap<>();
-    private final java.util.WeakHashMap<View,android.graphics.drawable.GradientDrawable> nativeLabelBacking=new java.util.WeakHashMap<>();
     private final EdgeWindowGuard windowGuard;private boolean safetyAllowed,appearanceWatching;
     private EdgeMaterialSurface nativePanel,nativeHandle,nativeTray; private NativeLiquidConfig nativeConfig=new NativeLiquidConfig("{}");
     private ValueAnimator settleAnimator; private GestureState gestureState=GestureState.CLOSED;
@@ -101,6 +103,11 @@ final class EdgePanelController {
         if(settings!=null&&settings.edgePanelTextAdaptation!=next.edgePanelTextAdaptation) { fixedPanelTextColor=next.edgePanelTextAdaptation?0:title==null?0:title.getCurrentTextColor();stopLabelSampling(); }
         if(settings!=null&&settings.edgePanelTextTone!=next.edgePanelTextTone&&next.edgePanelTextTone<0)fixedPanelTextColor=0;
         boolean nativeChanged=settings==null||!settings.edgePanelNativeGlass.equals(next.edgePanelNativeGlass)||settings.edgePanelTextTone!=next.edgePanelTextTone;
+        boolean controlsHostChanged=settings!=null&&(
+            !settings.edgeActions.bulbDevice.equals(next.edgeActions.bulbDevice)
+            ||!settings.edgeActions.pcDevice.equals(next.edgeActions.pcDevice)
+            ||!settings.edgeActions.keyboardDevice.equals(next.edgeActions.keyboardDevice)
+            ||!settings.edgeActions.controls.equals(next.edgeActions.controls));
         settings=next; this.safetyAllowed=safetyAllowed;lastSettingsRevision=next.revision;
         windowGuard.active(safetyAllowed&&next.edgePanelEnabled);
         boolean previousCard=nativeConfig.card;
@@ -126,6 +133,7 @@ final class EdgePanelController {
         if (!enabled) return;
         if (geometryChanged) { geometryUpdates++; lastChange="geometry"; updateGeometryInPlace(); }
         if (visualChanged) { visualUpdates++; lastChange="visual"; updateVisuals(false); }
+        if (controlsHostChanged&&onControlsPage()) showControls();
         if (contentChanged&&modalRoot!=null) { lastChange="content"; populateLaunchers(); populateActions(); layoutModal(bounds()); updateVisuals(false); }
         if (collapsedHandle==null && modalRoot==null) ensureCollapsed();
     }
@@ -211,6 +219,15 @@ final class EdgePanelController {
             caption.setEllipsize(android.text.TextUtils.TruncateAt.END);
             header.addView(heading,new LinearLayout.LayoutParams(-1,-2));
             header.addView(caption,new LinearLayout.LayoutParams(-1,-2));
+            controlsLink=new TextView(context);
+            controlsLink.setText("Controls ›");
+            controlsLink.setTextSize(14);
+            controlsLink.setGravity(Gravity.CENTER_VERTICAL);
+            controlsLink.setMinHeight(dp(48));
+            controlsLink.setFocusable(true);
+            controlsLink.setOnClickListener(v -> showControls());
+            selectable(controlsLink);
+            header.addView(controlsLink,new LinearLayout.LayoutParams(-1,-2));
             card.addView(header,new LinearLayout.LayoutParams(-1,-2));
             View topRule=new View(context); LinearLayout.LayoutParams topRuleParams=new LinearLayout.LayoutParams(-1,dp(1)); topRuleParams.setMargins(0,dp(8),0,dp(6)); card.addView(topRule,topRuleParams);
             ScrollView body=new ScrollView(context); body.setFillViewport(false); body.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
@@ -229,7 +246,9 @@ final class EdgePanelController {
                     if (event.getY()<dp(48)) body.smoothScrollBy(0,-dp(20));
                     else if (event.getY()>body.getHeight()-dp(48)) body.smoothScrollBy(0,dp(20));
                 }
-                if (event.getAction()==DragEvent.ACTION_DROP) { addDraftApp(event.getClipData().getItemAt(0).getText().toString()); return true; }
+                if (event.getAction()==DragEvent.ACTION_DROP) {
+                    return addDraftApp(event.getClipData().getItemAt(0).getText().toString());
+                }
                 return true;
             });
             body.setOnLongClickListener(v -> { enterEditMode(); return true; });
@@ -248,15 +267,15 @@ final class EdgePanelController {
             refreshPanelHeader();
             appGrid.setOnDragListener((v,event) -> { if (!editMode) return false; switch (event.getAction()) {
                 case DragEvent.ACTION_DRAG_STARTED: return event.getClipDescription()!=null&&event.getClipDescription().hasMimeType(android.content.ClipDescription.MIMETYPE_TEXT_PLAIN);
-                case DragEvent.ACTION_DROP: String pkg=event.getClipData().getItemAt(0).getText().toString(); addDraftApp(pkg); return true;
+                case DragEvent.ACTION_DROP: return addDraftApp(event.getClipData().getItemAt(0).getText().toString());
                 default: return true;
             }});
-            headerSeparator=topRule; actionSeparator=bottomRule; adaptiveLabels.add(heading); adaptiveLabels.add(caption); adaptiveLabels.add(empty);
+            headerSeparator=topRule; actionSeparator=bottomRule; adaptiveLabels.add(heading); adaptiveLabels.add(caption); adaptiveLabels.add(empty); adaptiveLabels.add(controlsLink);
             modalParams=baseParams(b.width,b.height,touchable); modalParams.gravity=Gravity.LEFT|Gravity.TOP; modalParams.y=b.top;
             modalParams.softInputMode=WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE;
             root.setOnApplyWindowInsetsListener((v,insets) -> {
                 int next=insets.getInsets(WindowInsets.Type.ime()).bottom;
-                if (imeHeight!=next) { imeHeight=next; if (editMode||windowDialogCard!=null) root.post(() -> layoutModal(bounds())); }
+                if (imeHeight!=next) { imeHeight=next; if (editMode||keyboardPageOpen()||windowDialogCard!=null) root.post(() -> layoutModal(bounds())); }
                 return insets;
             });
             windows.addView(root,modalParams); windowCreates++; populateLaunchers(); populateActions();
@@ -292,7 +311,7 @@ final class EdgePanelController {
         // The card adds the clipped radius to its width and padding; these cancel.
         int nextToolbarWidth=EdgeActionSettings.contentWidth(Math.round(width/context.getResources().getDisplayMetrics().density),PANEL_HORIZONTAL_PADDING_DP);
         if (wideToolbar!=singleRow||toolbarWidthDp!=nextToolbarWidth) { wideToolbar=singleRow;toolbarWidthDp=nextToolbarWidth;populateActions(); }
-        int available=Math.max(dp(56),b.height-(editMode?imeHeight:0)-dp(24));
+        int available=Math.max(dp(56),b.height-(editMode||keyboardPageOpen()?imeHeight:0)-dp(24));
         int height=Math.min(dp(settings.edgePanelHeight),available);
         if(actionsScroll!=null&&actions!=null){
             actions.measure(View.MeasureSpec.makeMeasureSpec(innerWidth,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(0,View.MeasureSpec.UNSPECIFIED));
@@ -402,33 +421,22 @@ private final android.graphics.Paint paint=new android.graphics.Paint(android.gr
                 for(AdaptiveGlassEngine engine:panelGlass)engine.releaseSurface(materialPanel);
                 if(materialPanel!=null){materialPanel.setBackground(null);materialPanel.setForeground(null);}panel.setBackground(null);panel.setForeground(null);connector.setBackground(null);connector.setForeground(null);
                 int ink=settings.edgePanelTextTone>=0?TextTone.color(settings.edgePanelTextTone):0xfff8fafd;
-                for(TextView label:adaptiveLabels){
-                    if(label==appSearch)appSearch.setHintTextColor(ink);
-                    if(isDescendant(label,actions)){label.setTextColor(ink);label.setShadowLayer(dp(1),0,dp(1)*.5f,Color.luminance(ink)>.179f?0x66000000:0x66ffffff);continue;}
-                    if(label.getCurrentTextColor()!=ink){label.setTextColor(ink);label.setShadowLayer(dp(1),0,dp(1),Color.luminance(ink)>.179f?0x99000000:0x99ffffff);}
-                    if(!nativeLabelOriginal.containsKey(label)){
-                        nativeLabelOriginal.put(label,label.getBackground());
-                        android.graphics.drawable.GradientDrawable backing=new EdgeInkBacking(label,label.getBackground());backing.setCornerRadius(dp(5));nativeLabelBacking.put(label,backing);label.setBackground(backing);((EdgeInkBacking)backing).bind();
-                        label.setShadowLayer(dp(1),0,dp(1),Color.luminance(ink)>.179f?0x99000000:0x99ffffff);
-                    }
-                    int a=nativeConfig.card?0:nativeConfig.preset==0?0:Math.round(170f*(float)Math.sqrt(nativeConfig.contrast));
-                    android.graphics.drawable.GradientDrawable backing=nativeLabelBacking.get(label);int color=(a<<24)|(nativeConfig.darkInk?0x00ffffff:0x00131a22);
-                    if(backing.getColor()==null||backing.getColor().getDefaultColor()!=color)backing.setColor(color);
-                }
-                for(ImageView icon:adaptiveIcons){
-                    icon.setColorFilter(ink);
-                    // Toolbar vectors need one clean stroke, not the legacy offset-copy outline.
-                    if(isDescendant(icon,actions)){if(icon.getParent() instanceof View item&&item.getBackground() instanceof android.graphics.drawable.RippleDrawable ripple)ripple.setColor(android.content.res.ColorStateList.valueOf((ink&0x00ffffff)|0x28000000));continue;}
-                    if(!nativeLabelOriginal.containsKey(icon)){
-                        nativeLabelOriginal.put(icon,icon.getBackground());android.graphics.drawable.GradientDrawable backing=new EdgeInkBacking(icon,icon.getBackground());backing.setCornerRadius(dp(6));nativeLabelBacking.put(icon,backing);icon.setBackground(backing);((EdgeInkBacking)backing).bind();
-                    }
-                    int a=nativeConfig.card?0:nativeConfig.preset==0?0:Math.round(170f*(float)Math.sqrt(nativeConfig.contrast));int color=(a<<24)|(nativeConfig.darkInk?0x00ffffff:0x00131a22);android.graphics.drawable.GradientDrawable backing=nativeLabelBacking.get(icon);if(backing instanceof EdgeInkBacking)((EdgeInkBacking)backing).ink(ink);
-                    if(backing.getColor()==null||backing.getColor().getDefaultColor()!=color)backing.setColor(color);
+                boolean adaptIconInk=settings.edgePanelTextTone<0&&settings.edgePanelTextAdaptation;
+                int middleIconInk=adaptIconInk?styles[1].foreground:ink;
+                int bottomIconInk=adaptIconInk?styles[2].foreground:ink;
+                applyControlsInk(ink,middleIconInk);
+                int alpha=nativeConfig.card||nativeConfig.preset==0?0:Math.round(170f*(float)Math.sqrt(nativeConfig.contrast));
+                int fill=(alpha<<24)|(nativeConfig.darkInk?0x00ffffff:0x00131a22);
+                for(TextView label:adaptiveLabels)
+                    EdgePanelInk.text(label,ink,isDescendant(label,actions)?Color.TRANSPARENT:fill);
+                for(ImageView icon:adaptiveIcons) {
+                    boolean action=isDescendant(icon,actions);
+                    int iconInk=action?bottomIconInk:middleIconInk;
+                    EdgePanelInk.icon(icon,iconInk);
+                    if(action) tintActionRipple(icon,iconInk);
                 }
                 headerSeparator.setBackgroundColor(0x44ffffff);actionSeparator.setBackgroundColor(0x44ffffff);startAppearanceWatch();return;
             }
-            restoreNativeLabelBackings();
-            for(TextView label:adaptiveLabels)label.setShadowLayer(0,0,0,0);
             if (editMode) {if(searchMerged()&&searchMergeRegion!=null){searchMergeRegion.setBackground(null);searchMergeRegion.setForeground(null);}panelGlass[1].apply(panel,styles[1],dp(30),true);}
             else panelGlass[1].applyEdge(panel,styles[1],dp(30),right,styles[0].border,styles[2].border);
             // The panel already reaches the screen edge. A second blur surface
@@ -491,6 +499,8 @@ private final android.graphics.Paint paint=new android.graphics.Paint(android.gr
     private void startAppearanceWatch(){if(!needsAppearanceWatch()){stopAppearanceWatch();return;}if(!appearanceWatching){appearanceWatching=true;lastSignalToken=Integer.MIN_VALUE;main.post(watchAppearance);}}
     private void stopAppearanceWatch(){appearanceWatching=false;main.removeCallbacks(watchAppearance);lastSignalToken=Integer.MIN_VALUE;}
     private String panelTitle(boolean editing) {
+        if (controlEntry!=null) return controlEntry.label;
+        if (controlList!=null) return "Controls";
         if (windowsMode) return "Windows";
         if (editing) return "Edit";
         return panelContextPackage==null?"Favorites":"Shortcuts";
@@ -498,13 +508,93 @@ private final android.graphics.Paint paint=new android.graphics.Paint(android.gr
     private void refreshPanelHeader() {
         if (title==null||panelCaption==null) return;
         title.setText(panelTitle(editMode));
-        String caption=editMode&&panelAppLabel==null?"Favorites":panelAppLabel;
+        String caption=panelAppLabel;
+        if (editMode) {
+            caption=FeaturePolicy.countEdgeShortcuts(android.text.TextUtils.join(",",draftApps))
+                +"/"+FeaturePolicy.MAX_EDGE_SHORTCUTS+" · "+(caption==null?"Favorites":caption);
+        }
         panelCaption.setText(caption);
-        panelCaption.setVisibility(!windowsMode&&caption!=null?View.VISIBLE:View.GONE);
+        panelCaption.setVisibility(!windowsMode&&!onControlsPage()&&caption!=null?View.VISIBLE:View.GONE);
+        if (controlsLink!=null) {
+            boolean show=!editMode&&!windowsMode&&!onControlsPage();
+            controlsLink.setVisibility(show?View.VISIBLE:View.GONE);
+        }
+    }
+    private boolean onControlsPage() {
+        return controlList!=null||controlDetail!=null;
+    }
+
+    private void showControls() {
+        if (editMode||windowsMode||settings==null||bodyContent==null) return;
+        if (folderLayer!=null) closeFolder();
+        detachControls();
+        controlList=new EdgeControlList(context,settings.edgeActions.controls,this::showControl);
+        displayControlsPage(controlList.view);
+    }
+
+    private void showControl(EdgeControlList.Entry entry) {
+        if (controlList==null) return;
+        detachControls();
+        controlEntry=entry;
+        boolean configured=controlConfigured(entry);
+        controlDetail=switch (entry) {
+            case BULB -> new EdgeBulbControls(context,main,configured);
+            case KEYBOARD -> new EdgeKeyboardControls(context,main,configured);
+            case POWER, TEXT -> new EdgePcControls(context,main,entry==EdgeControlList.Entry.TEXT,configured,this::closeImmediately);
+        };
+        displayControlsPage(controlDetail.view());
+    }
+
+    private boolean controlConfigured(EdgeControlList.Entry entry) {
+        return !settings.edgeActions.controlDevice(entry.id).isEmpty();
+    }
+
+    private boolean keyboardPageOpen() { return controlEntry==EdgeControlList.Entry.KEYBOARD; }
+
+    private void openPanelActions() {
+        Intent launch=EdgeBuiltinShortcuts.actionSettingsIntent(context.getPackageManager());
+        if (launch!=null) launchShortcut(launch);
+    }
+
+    private void displayControlsPage(View view) {
+        bodyContent.addView(view,new LinearLayout.LayoutParams(-1,-2));
+        appGrid.setVisibility(View.GONE);
+        placeholder.setVisibility(View.GONE);
+        stopLabelSampling();
+        refreshPanelHeader();
+        populateActions();
+        scroll.scrollTo(0,0);
+        layoutModal(bounds());
+        updateVisuals(false);
+    }
+    private void detachControls() {
+        if (controlList!=null) {
+            bodyContent.removeView(controlList.view);
+            controlList=null;
+        }
+        if (controlDetail!=null) {
+            if (keyboardPageOpen()) hideKeyboard();
+            controlDetail.close();
+            bodyContent.removeView(controlDetail.view());
+            controlDetail=null;
+        }
+        controlEntry=null;
+    }
+
+    private void leaveControls() {
+        detachControls();
+        appGrid.setVisibility(View.VISIBLE);
+        populateLaunchers();
+        populateActions();
+        layoutModal(bounds());
+        updateVisuals(false);
     }
     private void populateLaunchers() {
         if (appGrid==null||settings==null) return;
+        refreshPanelHeader();
+        if (onControlsPage()) return;
         stopLabelSampling();
+        adaptiveIcons.removeIf(icon -> isDescendant(icon,appGrid));
         appGrid.removeAllViews();
         adaptiveLabels.removeIf(label -> label!=title&&label!=placeholder&&label.getTag()==Boolean.TRUE);
         populateWindowShelf();
@@ -524,6 +614,7 @@ private final android.graphics.Paint paint=new android.graphics.Paint(android.gr
                 if (folder) button.setImageDrawable(folderIcon(visible));
                 button.setContentDescription(folder?folderName(item):EdgeBuiltinShortcuts.label(pm,packageName)); button.setBackgroundColor(Color.TRANSPARENT);
                 button.setPadding(dp(4),dp(4),dp(4),dp(4)); button.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                adaptiveIcons.add(button);
                 button.setOnClickListener(v -> {
                     if (editMode) { if (folder) showFolder(item); return; }
                     if (folder) { showFolder(item); return; }
@@ -566,7 +657,7 @@ private final android.graphics.Paint paint=new android.graphics.Paint(android.gr
                             if (folderHover!=null) main.removeCallbacks(folderHover);
                             String dragged=event.getClipData().getItemAt(0).getText().toString(); if (dragged.equals(item)||dragged.equals(panelContextPackage)) return true;
                             if (java.util.Arrays.asList(item.split("\\+")).contains(dragged)) return true;
-                            if (!isSelected(dragged)&&android.text.TextUtils.join(",",draftApps).split("[,+]").length>=12) return true;
+                            if (!canAddDraftApp(dragged)) return false;
                             extractMember(dragged);
                             draftApps.remove(dragged); int target=draftApps.indexOf(item);
                             if (item.equals(folderTarget)) {
@@ -577,7 +668,7 @@ private final android.graphics.Paint paint=new android.graphics.Paint(android.gr
                             folderTarget=null; resetDragPreview(); populateLaunchers(); return true;
                         } return true;
                     });
-                    ImageView remove=new ImageView(context); remove.setImageDrawable(new EdgeCloseDrawable()); remove.setScaleType(ImageView.ScaleType.FIT_CENTER); remove.setContentDescription("Remove "+pm.getApplicationLabel(info));
+                    ImageView remove=new ImageView(context); remove.setImageDrawable(new EdgePanelIcon(EdgePanelIcon.Kind.CANCEL)); adaptiveIcons.add(remove); remove.setScaleType(ImageView.ScaleType.FIT_CENTER); remove.setContentDescription("Remove "+pm.getApplicationLabel(info));
                     remove.setPadding(dp(5),dp(5),dp(5),dp(5));
                     android.graphics.drawable.GradientDrawable badge=new android.graphics.drawable.GradientDrawable(); badge.setColor(0xCCB3261E); badge.setShape(android.graphics.drawable.GradientDrawable.OVAL); remove.setBackground(badge);
                     remove.setOnClickListener(v -> { draftApps.remove(item); populateLaunchers(); buildCatalog(appSearch==null?"":appSearch.getText().toString()); });
@@ -593,7 +684,7 @@ private final android.graphics.Paint paint=new android.graphics.Paint(android.gr
                         int target=light?0xFF10161D:0xFFF8FAFD; labelColors.put(appName,target);
                         ValueAnimator old=labelAnimators.remove(appName); if (old!=null) old.cancel();
                         ValueAnimator animator=ValueAnimator.ofArgb(appName.getCurrentTextColor(),target); animator.setDuration(settings.edgePanelTextDurationMs<0?220:settings.edgePanelTextDurationMs);
-                        animator.addUpdateListener(a -> appName.setTextColor((Integer)a.getAnimatedValue())); labelAnimators.put(appName,animator); animator.start();
+                        animator.addUpdateListener(a -> EdgePanelInk.text(appName,(Integer)a.getAnimatedValue())); labelAnimators.put(appName,animator); animator.start();
                     }); labelSamplers.put(appName,sampler); sampler.start();
                 });
                 index++;
@@ -602,6 +693,7 @@ private final android.graphics.Paint paint=new android.graphics.Paint(android.gr
         if (windowsMode&&index>0) addWindowSection("Shortcuts");
         placeholder.setText(editMode?"Tap Add to choose apps.":"Tap Edit to choose apps.");
         placeholder.setVisibility(!windowsMode&&index==0?View.VISIBLE:View.GONE);
+        if (editMode) refreshPanelHeader();
     }
 
     private void launchShortcut(Intent launch) {
@@ -785,6 +877,7 @@ private final android.graphics.Paint paint=new android.graphics.Paint(android.gr
     }
 
     private void showWindowDialog(View card,int maxHeightDp) {
+        EdgePanelInk.dialog(card,0xFF10161D);
         closeFolder();
         FrameLayout layer=new FrameLayout(context);
         layer.setBackgroundColor(0x55000000);
@@ -875,6 +968,15 @@ private final android.graphics.Paint paint=new android.graphics.Paint(android.gr
             View save=createAction(EdgePanelIcon.Kind.SAVE,"Save",() -> exitEditMode(true));
             if (wideToolbar) addActionRow(add,cancel,save);
             else { addActionRow(add); addActionRow(cancel,save); }
+        } else if (controlDetail!=null) {
+            View back=createAction(EdgePanelIcon.Kind.BACK,"Back",this::showControls);
+            View action=controlConfigured(controlEntry)
+                ? createAction(EdgePanelIcon.Kind.REFRESH,"Refresh",controlDetail::refresh)
+                : createAction(EdgePanelIcon.Kind.SETTINGS,"Settings",this::openPanelActions);
+            addActionRow(back,action);
+        } else if (controlList!=null) {
+            addActionRow(createAction(EdgePanelIcon.Kind.BACK,"Back",this::leaveControls),
+                createAction(EdgePanelIcon.Kind.SETTINGS,"Settings",this::openPanelActions));
         } else if (windowsMode) {
             View back=createAction(EdgePanelIcon.Kind.BACK,"Back",() -> setWindowsMode(false));
             View add=createAction(EdgePanelIcon.Kind.ADD,"Add",this::showWindowAppPicker);
@@ -908,7 +1010,7 @@ private final android.graphics.Paint paint=new android.graphics.Paint(android.gr
         actions.addView(row,new LinearLayout.LayoutParams(-1,-2));
     }
     private void enterEditMode() {
-        if (editMode||windowsMode||settings==null||panel==null||contextSaveInFlight) return;
+        if (editMode||windowsMode||onControlsPage()||settings==null||panel==null||contextSaveInFlight) return;
         interruptSettling(); setProgress(1f); setGestureState(GestureState.OPEN); removeCollapsed(); setModalTouchable(true);
         String apps=panelAppsOverride==null?settings.edgePanelApps:panelAppsOverride;
         editMode=true; draftApps.clear(); for (String value:apps.split(",")) if (!value.isEmpty()) draftApps.add(value);
@@ -920,7 +1022,7 @@ private final android.graphics.Paint paint=new android.graphics.Paint(android.gr
         View grip=createSearchGrip();appTray.addView(grip,new LinearLayout.LayoutParams(-1,dp(28)));
         searchMergeRegion=new EdgeMergeRegion(context,panel,appTray);searchMergeRegion.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);modalRoot.addView(searchMergeRegion,0);
         LinearLayout searchRow=new LinearLayout(context); searchRow.setGravity(Gravity.CENTER_VERTICAL); searchRow.addView(appSearch,new LinearLayout.LayoutParams(0,dp(48),1f));
-        ImageButton closeSearch=new ImageButton(context); closeSearch.setImageDrawable(new EdgeCloseDrawable()); closeSearch.setPadding(dp(15),dp(15),dp(15),dp(15)); adaptiveIcons.add(closeSearch); closeSearch.setBackgroundColor(Color.TRANSPARENT); closeSearch.setContentDescription("Close app search"); closeSearch.setOnClickListener(v -> hideAppTray()); searchRow.addView(closeSearch,new LinearLayout.LayoutParams(dp(48),dp(48)));
+        ImageButton closeSearch=new ImageButton(context); closeSearch.setImageDrawable(new EdgePanelIcon(EdgePanelIcon.Kind.CANCEL)); closeSearch.setPadding(dp(15),dp(15),dp(15),dp(15)); adaptiveIcons.add(closeSearch); closeSearch.setBackgroundColor(Color.TRANSPARENT); closeSearch.setContentDescription("Close app search"); closeSearch.setOnClickListener(v -> hideAppTray()); searchRow.addView(closeSearch,new LinearLayout.LayoutParams(dp(48),dp(48)));
         appTray.addView(searchRow,new LinearLayout.LayoutParams(-1,-2)); catalogScroll=new ScrollView(context); catalogScroll.addView(catalog); appTray.addView(catalogScroll,new LinearLayout.LayoutParams(-1,0,1f)); modalRoot.addView(appTray);
         appSearch.addTextChangedListener(new android.text.TextWatcher() {
             public void beforeTextChanged(CharSequence s,int start,int count,int after) {} public void onTextChanged(CharSequence s,int start,int before,int count) { buildCatalog(s.toString()); }
@@ -935,19 +1037,39 @@ private final android.graphics.Paint paint=new android.graphics.Paint(android.gr
             if (panelContextPackage==null) persistApps(apps);
             else persistContextApps(panelContextPackage,apps);
         }
-        if (catalog!=null) adaptiveLabels.removeIf(v -> isDescendant(v,catalog));
+        if (catalog!=null) {
+            adaptiveLabels.removeIf(v -> isDescendant(v,catalog));
+            adaptiveIcons.removeIf(v -> isDescendant(v,catalog));
+        }
         hideKeyboard(); cancelSearchDrag(); closeTrayMaterial(); removeSearchMergeView(); if(appTray!=null){adaptiveLabels.removeIf(v -> isDescendant(v,appTray));adaptiveIcons.removeIf(v -> isDescendant(v,appTray));} editMode=false; if (appTray!=null) modalRoot.removeView(appTray); appTray=null; catalogScroll=null; appSearch=null; catalog=null;
         refreshPanelHeader(); populateLaunchers(); populateActions(); layoutModal(bounds()); updateVisuals(false);
     }
-    private void addDraftApp(String packageName) {
-        if (!editMode||draftApps.contains(packageName)||packageName.equals(panelContextPackage)) return;
-        if (!isSelected(packageName)&&android.text.TextUtils.join(",",draftApps).split("[,+]").length>=12) return;
+    private boolean canAddDraftApp(String item) {
+        if (!editMode||item.equals(panelContextPackage)) return false;
+        if (isSelected(item)) return true;
+        String current=android.text.TextUtils.join(",",draftApps);
+        if (FeaturePolicy.countEdgeShortcuts(current)>=FeaturePolicy.MAX_EDGE_SHORTCUTS) {
+            Toast.makeText(context,"Edge panel is full. Remove a shortcut first.",Toast.LENGTH_SHORT).show();
+            return false;
+        }
+        if (!FeaturePolicy.validEdgeApps(current.isEmpty()?item:current+","+item)) {
+            Toast.makeText(context,"The shortcut list is too long. Remove a shortcut first.",Toast.LENGTH_SHORT).show();
+            return false;
+        }
+        return true;
+    }
+    private boolean addDraftApp(String packageName) {
+        if (draftApps.contains(packageName)||!canAddDraftApp(packageName)) return false;
         extractMember(packageName);
         draftApps.add(packageName); populateLaunchers(); buildCatalog(appSearch==null?"":appSearch.getText().toString());
         scroll.smoothScrollTo(0,0);
+        return true;
     }
     private void buildCatalog(String query) {
-        if (!editMode||catalog==null) return; adaptiveLabels.removeIf(v -> isDescendant(v,catalog)); catalog.removeAllViews(); String needle=query.trim().toLowerCase(Locale.ROOT);
+        if (!editMode||catalog==null) return;
+        adaptiveLabels.removeIf(v -> isDescendant(v,catalog));
+        adaptiveIcons.removeIf(v -> isDescendant(v,catalog));
+        catalog.removeAllViews(); String needle=query.trim().toLowerCase(Locale.ROOT);
         android.content.pm.PackageManager pm=context.getPackageManager(); Intent intent=new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
         java.util.HashSet<String> seen=new java.util.HashSet<>(); java.util.ArrayList<android.content.pm.ResolveInfo> matches=new java.util.ArrayList<>(pm.queryIntentActivities(intent,0));
         matches.sort((a,b) -> String.CASE_INSENSITIVE_ORDER.compare(a.loadLabel(pm).toString(),b.loadLabel(pm).toString()));
@@ -956,7 +1078,7 @@ private final android.graphics.Paint paint=new android.graphics.Paint(android.gr
             boolean selected=java.util.Arrays.asList(android.text.TextUtils.join(",",draftApps).split("[,+]")).contains(id);
             if(!selected&&(needle.isEmpty()||EdgeBuiltinShortcuts.LABEL.toLowerCase(Locale.ROOT).contains(needle))&&EdgeBuiltinShortcuts.intent(pm,id)!=null){
                 LinearLayout row=new LinearLayout(context);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(0,dp(4),0,dp(4));
-                ImageView icon=new ImageView(context);icon.setImageDrawable(EdgeBuiltinShortcuts.icon(pm,id));
+                ImageView icon=new ImageView(context);icon.setImageDrawable(EdgeBuiltinShortcuts.icon(pm,id));adaptiveIcons.add(icon);
                 TextView text=new TextView(context);text.setText(EdgeBuiltinShortcuts.LABEL);text.setTextSize(13);text.setSingleLine(true);text.setEllipsize(android.text.TextUtils.TruncateAt.END);text.setPadding(dp(8),0,0,0);text.setTextColor(0xFF10161D);adaptiveLabels.add(text);
                 row.addView(icon,new LinearLayout.LayoutParams(dp(36),dp(36)));row.addView(text,new LinearLayout.LayoutParams(0,dp(44),1f));
                 row.setOnClickListener(v->addDraftApp(id));row.setOnLongClickListener(v->{beginIconDrag(id,icon.getDrawable());return true;});
@@ -966,7 +1088,7 @@ private final android.graphics.Paint paint=new android.graphics.Paint(android.gr
         for (android.content.pm.ResolveInfo info:matches) {
             String pkg=info.activityInfo.packageName,label=info.loadLabel(pm).toString(); if (pkg.equals(panelContextPackage)||!seen.add(pkg)||java.util.Arrays.asList(android.text.TextUtils.join(",",draftApps).split("[,+]")).contains(pkg)||(!needle.isEmpty()&&!label.toLowerCase(Locale.ROOT).contains(needle))) continue;
             LinearLayout row=new LinearLayout(context); row.setGravity(Gravity.CENTER_VERTICAL); row.setPadding(0,dp(4),0,dp(4));
-            ImageView icon=new ImageView(context); icon.setImageDrawable(info.loadIcon(pm)); TextView text=new TextView(context); text.setText(label); text.setTextSize(13); text.setSingleLine(true); text.setEllipsize(android.text.TextUtils.TruncateAt.END); text.setPadding(dp(8),0,0,0); text.setTextColor(0xFF10161D); adaptiveLabels.add(text);
+            ImageView icon=new ImageView(context); icon.setImageDrawable(info.loadIcon(pm)); adaptiveIcons.add(icon); TextView text=new TextView(context); text.setText(label); text.setTextSize(13); text.setSingleLine(true); text.setEllipsize(android.text.TextUtils.TruncateAt.END); text.setPadding(dp(8),0,0,0); text.setTextColor(0xFF10161D); adaptiveLabels.add(text);
             row.addView(icon,new LinearLayout.LayoutParams(dp(36),dp(36))); row.addView(text,new LinearLayout.LayoutParams(0,dp(44),1f)); row.setOnClickListener(v -> addDraftApp(pkg));
             row.setOnLongClickListener(v -> { beginIconDrag(pkg,icon.getDrawable()); return true; });
             catalog.addView(row,new LinearLayout.LayoutParams(-1,dp(52)));
@@ -1026,7 +1148,7 @@ private final android.graphics.Paint paint=new android.graphics.Paint(android.gr
         LinearLayout card=new LinearLayout(context); card.setOrientation(LinearLayout.VERTICAL); card.setPadding(dp(16),dp(12),dp(16),dp(16)); card.setOnClickListener(v -> {});
         android.graphics.drawable.GradientDrawable background=new android.graphics.drawable.GradientDrawable(); background.setColor(0xF0E2E9EF); background.setCornerRadius(dp(24)); card.setBackground(background);
         LinearLayout header=new LinearLayout(context); EditText name=new EditText(context); name.setSingleLine(true); name.setHint("Edit name"); name.setText(folderName(item)); name.setTextColor(0xFF10161D); name.setHintTextColor(0xFF5F6368); name.setTextSize(16); name.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(40)});
-        header.addView(name,new LinearLayout.LayoutParams(0,dp(48),1f)); ImageButton close=new ImageButton(context); close.setImageDrawable(new EdgeCloseDrawable()); close.setColorFilter(0xFF10161D); close.setPadding(dp(12),dp(16),dp(12),dp(16)); close.setBackgroundColor(Color.TRANSPARENT); close.setContentDescription("Close folder"); close.setOnClickListener(v -> closeFolder()); header.addView(close,new LinearLayout.LayoutParams(dp(40),dp(48))); card.addView(header);
+        header.addView(name,new LinearLayout.LayoutParams(0,dp(48),1f)); ImageButton close=new ImageButton(context); close.setImageDrawable(new EdgePanelIcon(EdgePanelIcon.Kind.CANCEL)); close.setPadding(dp(12),dp(16),dp(12),dp(16)); close.setBackgroundColor(Color.TRANSPARENT); close.setContentDescription("Close folder"); close.setOnClickListener(v -> closeFolder()); header.addView(close,new LinearLayout.LayoutParams(dp(40),dp(48))); card.addView(header);
         GridLayout grid=new GridLayout(context); grid.setColumnCount(3);
         String visible=editMode?item:EdgeAppRules.visibleFavorite(item,panelForeground);
         for (String pkg:visible.split("\\+")) try {
@@ -1044,7 +1166,7 @@ private final android.graphics.Paint paint=new android.graphics.Paint(android.gr
                 draftFolderNames.put(item,s.toString()); if (editMode) populateLaunchers(); else persistApps(settings.edgePanelApps);
             } catch (Exception ignored) {} }
         });
-        layer.addView(card,new FrameLayout.LayoutParams(dp(280),-2,Gravity.CENTER)); modalRoot.addView(layer,new FrameLayout.LayoutParams(-1,-1)); folderLayer=layer;
+        EdgePanelInk.dialog(card,0xFF10161D); layer.addView(card,new FrameLayout.LayoutParams(dp(280),-2,Gravity.CENTER)); modalRoot.addView(layer,new FrameLayout.LayoutParams(-1,-1)); folderLayer=layer;
     }
     private String folderName(String item) {
         if (editMode) return draftFolderNames.optString(item,"");
@@ -1055,6 +1177,7 @@ private final android.graphics.Paint paint=new android.graphics.Paint(android.gr
     private void hideAppTray() { hideKeyboard(); cancelSearchDrag(); closeTrayMaterial(); if(appTray!=null)appTray.setVisibility(View.GONE);if(searchMergeRegion!=null)searchMergeRegion.setVisibility(View.GONE);updateVisuals(false); }
     private boolean isSelected(String item) { return draftApps.contains(item)||java.util.Arrays.asList(android.text.TextUtils.join(",",draftApps).split("[,+]")).contains(item); }
     private void beginIconDrag(String item,android.graphics.drawable.Drawable drawable) {
+        if (!canAddDraftApp(item)) return;
         hideKeyboard(); folderTarget=null; draggingItem=item; previewTarget=null; dragCells.clear();
         for (int i=0;i<appGrid.getChildCount();i++) dragCells.add(appGrid.getChildAt(i));
         final android.graphics.drawable.Drawable icon=drawable.getConstantState()==null?drawable:drawable.getConstantState().newDrawable().mutate();
@@ -1100,7 +1223,7 @@ private final android.graphics.Paint paint=new android.graphics.Paint(android.gr
         return new android.graphics.drawable.BitmapDrawable(context.getResources(),bitmap);
     }
     private LinearLayout createAction(EdgePanelIcon.Kind glyph,String label,Runnable action) {
-        boolean labels=settings==null||editMode||windowsMode||settings.edgeActions.labels;
+        boolean labels=settings==null||editMode||windowsMode||onControlsPage()||settings.edgeActions.labels;
         int size=settings==null?24:settings.edgeActions.iconSize;
         LinearLayout item=new LinearLayout(context);item.setOrientation(LinearLayout.VERTICAL);item.setGravity(Gravity.CENTER);
         item.setMinimumHeight(dp(labels?56:48));item.setPadding(dp(4),dp(6),dp(4),dp(6));
@@ -1110,7 +1233,7 @@ private final android.graphics.Paint paint=new android.graphics.Paint(android.gr
         android.graphics.drawable.GradientDrawable mask=new android.graphics.drawable.GradientDrawable();mask.setColor(Color.WHITE);mask.setCornerRadius(dp(12));
         item.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(((bottomInk!=0?bottomInk:title!=null?title.getCurrentTextColor():Color.WHITE)&0x00ffffff)|0x28000000),null,mask));
         item.setContentDescription(label);item.setFocusable(true);item.setOnClickListener(v->action.run());
-        if(!editMode&&!windowsMode)item.setOnLongClickListener(v->{Intent launch=EdgeBuiltinShortcuts.actionSettingsIntent(context.getPackageManager());if(launch!=null)launchShortcut(launch);return true;});
+        if(!editMode&&!windowsMode&&!onControlsPage())item.setOnLongClickListener(v->{openPanelActions();return true;});
         return item;
     }
 
@@ -1125,11 +1248,25 @@ private final android.graphics.Paint paint=new android.graphics.Paint(android.gr
         if(!adaptive&&fixedPanelTextColor==0)fixedPanelTextColor=middle;
         int fixed=settings!=null&&settings.edgePanelTextTone>=0?TextTone.color(settings.edgePanelTextTone):fixedPanelTextColor;
         middleInk=adaptive?middle:fixed;bottomInk=adaptive?bottom:fixed;
-        for (TextView label:adaptiveLabels) if (!adaptive||!labelColors.containsKey(label)) label.setTextColor(adaptive?(label==title?top:(isDescendant(label,actions)?bottom:middle)):fixed);
-        for (ImageView icon:adaptiveIcons){
-            boolean action=isDescendant(icon,actions);int ink=adaptive?(action?bottom:middle):fixed;icon.setColorFilter(ink);
-            if(action&&icon.getParent() instanceof View item&&item.getBackground() instanceof android.graphics.drawable.RippleDrawable ripple)ripple.setColor(android.content.res.ColorStateList.valueOf((ink&0x00ffffff)|0x28000000));
+        applyControlsInk(middleInk,middleInk);
+        for (TextView label:adaptiveLabels) {
+            int ink=adaptive?labelColors.getOrDefault(label,label==title?top:(isDescendant(label,actions)?bottom:middle)):fixed;
+            EdgePanelInk.text(label,ink);
         }
+        for (ImageView icon:adaptiveIcons) {
+            boolean action=isDescendant(icon,actions);
+            int ink=adaptive?(action?bottom:middle):fixed;
+            EdgePanelInk.icon(icon,ink);
+            if(action) tintActionRipple(icon,ink);
+        }
+    }
+    private void tintActionRipple(ImageView icon,int ink) {
+        if(icon.getParent() instanceof View item&&item.getBackground() instanceof android.graphics.drawable.RippleDrawable ripple)
+            ripple.setColor(android.content.res.ColorStateList.valueOf((ink&0x00ffffff)|0x28000000));
+    }
+    private void applyControlsInk(int ink,int iconInk) {
+        if (controlList!=null) controlList.setInk(ink,iconInk);
+        if (controlDetail!=null) controlDetail.setInk(ink);
     }
     private boolean isDescendant(View view,ViewGroup ancestor) {
         if (view==null||ancestor==null) return false; android.view.ViewParent parent=view.getParent();
@@ -1216,7 +1353,7 @@ private final android.graphics.Paint paint=new android.graphics.Paint(android.gr
     private void registerBack() {
         if (Build.VERSION.SDK_INT<33 || modalRoot==null || backDispatcher!=null) return;
         try {
-            backDispatcher=modalRoot.findOnBackInvokedDispatcher(); backCallback=() -> { if (folderLayer!=null) closeFolder(); else if (editMode) exitEditMode(false); else if (windowsMode) setWindowsMode(false); else animateTo(0f,0f); };
+            backDispatcher=modalRoot.findOnBackInvokedDispatcher(); backCallback=this::backInPanel;
             if (backDispatcher!=null) backDispatcher.registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,backCallback);
         } catch (Throwable ignored) { backDispatcher=null; backCallback=null; }
     }
@@ -1233,11 +1370,12 @@ private final android.graphics.Paint paint=new android.graphics.Paint(android.gr
         if (collapsedHandle!=null) { try { windows.removeViewImmediate(collapsedHandle); windowRemoves++; } catch (Throwable ignored) {} }
         collapsedHandle=null; collapsedParams=null;
     }
-    private void restoreNativeLabelBackings(){for(java.util.Map.Entry<View,android.graphics.drawable.Drawable> e:nativeLabelOriginal.entrySet())e.getKey().setBackground(e.getValue());nativeLabelOriginal.clear();nativeLabelBacking.clear();}
     private void removeModal() {
+        detachControls();
+        controlsLink=null;
         if(blankLongPress!=null)main.removeCallbacks(blankLongPress);if(folderHover!=null)main.removeCallbacks(folderHover);blankLongPress=folderHover=null;
         if(panel!=null)for(AdaptiveGlassEngine e:panelGlass)e.releaseSurface(panel);
-        cancelSearchDrag();closeTrayMaterial();removeSearchMergeView();nativePanelOwner=null;restoreNativeLabelBackings();
+        cancelSearchDrag();closeTrayMaterial();removeSearchMergeView();nativePanelOwner=null;
         if(nativePanel!=null){nativePanel.close();nativePanel=null;}
         folderLayer=null; windowDialogCard=null; draggingItem=null; dragCells.clear(); previewTarget=null;
         stopLabelSampling();
@@ -1285,11 +1423,20 @@ private final android.graphics.Paint paint=new android.graphics.Paint(android.gr
     private int dp(int v) { return Math.round(v*context.getResources().getDisplayMetrics().density); }
     private static final class Bounds { final int width,height,top,bottom; Bounds(int width,int height,int top,int bottom){this.width=width;this.height=height;this.top=top;this.bottom=bottom;} }
 
+    private void backInPanel() {
+        if (folderLayer!=null) closeFolder();
+        else if (editMode) exitEditMode(false);
+        else if (controlDetail!=null) showControls();
+        else if (controlList!=null) leaveControls();
+        else if (windowsMode) setWindowsMode(false);
+        else animateTo(0f,0f);
+    }
+
     private final class GestureRoot extends FrameLayout {
         @Override public boolean dispatchTouchEvent(MotionEvent e){if(nativePanel!=null)nativePanel.touch(e);if(nativeTray!=null)nativeTray.touch(e);return super.dispatchTouchEvent(e);}
         float downX,downY,startProgress; boolean horizontal,outsideTap,panelOnRight; int panelLeft,panelRight; VelocityTracker velocity;
         GestureRoot(Context c) { super(c); setOnKeyListener((v,key,e) -> {
-            if (key==KeyEvent.KEYCODE_BACK&&e.getAction()==KeyEvent.ACTION_UP) { if (folderLayer!=null) closeFolder(); else if (editMode) exitEditMode(false); else if (windowsMode) setWindowsMode(false); else animateTo(0f,0f); return true; } return false; }); }
+            if (key==KeyEvent.KEYCODE_BACK&&e.getAction()==KeyEvent.ACTION_UP) { backInPanel(); return true; } return false; }); }
         @Override public boolean onInterceptTouchEvent(MotionEvent e) {
             if(!enabled)return false;
             if (folderLayer!=null) return false;
@@ -1298,7 +1445,7 @@ private final android.graphics.Paint paint=new android.graphics.Paint(android.gr
                     interruptSettling(); downX=e.getX(); downY=e.getY(); startProgress=openProgress; horizontal=false; editLongPress=false;
                     outsideTap=(panelOnRight?e.getX()<panelLeft:e.getX()>panelRight);
                     if (editMode&&appTray!=null&&appTray.getVisibility()==View.VISIBLE) { Rect rect=new Rect(); appTray.getHitRect(rect); if (rect.contains((int)e.getX(),(int)e.getY())) outsideTap=false; }
-                    if (!editMode&&!windowsMode&&!outsideTap&&!contextSaveInFlight) {
+                    if (!editMode&&!windowsMode&&!onControlsPage()&&!outsideTap&&!contextSaveInFlight) {
                         boolean iconHit=false; for (int i=0;i<appGrid.getChildCount();i++) { Rect rect=new Rect(); appGrid.getChildAt(i).getGlobalVisibleRect(rect); if (rect.contains((int)e.getRawX(),(int)e.getRawY())) iconHit=true; }
                         if (!iconHit) { blankLongPress=() -> { editLongPress=true; enterEditMode(); modalRoot.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS); }; main.postDelayed(blankLongPress,420); }
                     }
