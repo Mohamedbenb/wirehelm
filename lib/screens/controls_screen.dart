@@ -9,6 +9,10 @@ import '../commands/default_commands.dart';
 import '../commands/command_options_menu.dart';
 import '../models/device.dart';
 import '../models/remote_command.dart';
+import '../services/plasma_desktop_resume.dart';
+import '../services/plasma_power.dart';
+import '../services/plasma_settings.dart';
+import '../services/smart_bulb.dart';
 import '../ssh/ssh_session.dart';
 import '../stateful/stateful_command_executor.dart';
 import '../stateful/stateful_command_item.dart';
@@ -26,11 +30,30 @@ import 'performance_screen.dart';
 import 'remote_screenshot_screen.dart';
 import 'remote_desktop_screen.dart';
 import 'linux_health_screen.dart';
+import 'plasma_display_screen.dart';
+import 'plasma_text_size_screen.dart';
+import 'smart_bulb_screen.dart';
 import '../utils/command_icons.dart';
 import '../utils/command_parameters.dart';
 import '../utils/sudo_command.dart';
 import '../utils/command_transfer.dart';
 import '../widgets/app_update_banner.dart';
+
+enum _DeviceTab { tools, controls, commands }
+
+class _DeviceTool {
+  const _DeviceTool(
+    this.action,
+    this.title,
+    this.icon, {
+    this.needsConnection = true,
+  });
+
+  final String action;
+  final String title;
+  final IconData icon;
+  final bool needsConnection;
+}
 
 class ControlsScreen extends StatefulWidget {
   final Device device;
@@ -50,6 +73,7 @@ class ControlsScreen extends StatefulWidget {
   final List<Device> peerDevices;
   final Future<String?> Function()? onFindOnLan;
   final Future<void> Function(Device)? onOpenPeer;
+  final Future<SshSession> Function(Device)? onConnectPeer;
 
   const ControlsScreen({
     super.key,
@@ -60,6 +84,7 @@ class ControlsScreen extends StatefulWidget {
     this.peerDevices = const [],
     this.onFindOnLan,
     this.onOpenPeer,
+    this.onConnectPeer,
     required this.onDeviceUpdated,
   });
 
@@ -68,7 +93,7 @@ class ControlsScreen extends StatefulWidget {
 }
 
 class _ControlsScreenState extends State<ControlsScreen>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
   bool _appActive = true;
   bool _wasConnected = false;
   bool _lostConnection = false;
@@ -77,7 +102,7 @@ class _ControlsScreenState extends State<ControlsScreen>
       mounted &&
       _appActive &&
       (ModalRoute.of(context)?.isCurrent ?? false) &&
-      _view == 'controls' &&
+      _tab == _DeviceTab.controls &&
       _session.isConnected &&
       _session.deviceId == _device.id;
 
@@ -119,8 +144,10 @@ class _ControlsScreenState extends State<ControlsScreen>
 
   bool _busy = false;
   bool _connecting = false;
+  bool _unlockingPc = false;
   bool _findingLanAddress = false;
-  String _view = 'home';
+  late final TabController _tabs;
+  _DeviceTab _tab = _DeviceTab.tools;
   Future<bool?>? _windowsAdminCheck;
 
   String? _status;
@@ -157,6 +184,8 @@ class _ControlsScreenState extends State<ControlsScreen>
     super.initState();
 
     _device = widget.device;
+    _tabs = TabController(length: _DeviceTab.values.length, vsync: this)
+      ..addListener(_onTabChanged);
 
     //
     // Backward compatible until
@@ -194,11 +223,19 @@ class _ControlsScreenState extends State<ControlsScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _session.removeListener(_onSessionChanged);
+    _tabs.dispose();
     _statefulControls.removeListener(_onStatefulControlsChanged);
 
     _statefulControls.dispose();
 
     super.dispose();
+  }
+
+  void _onTabChanged() {
+    final tab = _DeviceTab.values[_tabs.index];
+    if (tab == _tab) return;
+    setState(() => _tab = tab);
+    if (_canRefreshStatuses) unawaited(_refreshStatefulStatuses());
   }
 
   void _onStatefulControlsChanged() {
@@ -409,7 +446,7 @@ class _ControlsScreenState extends State<ControlsScreen>
   }
 
   Future<void> _addCommand() async {
-    final defaults = defaultCommandsFor(_device.shellStyle);
+    final defaults = defaultCommandsFor(_device.commandProfile);
 
     final choice = await showModalBottomSheet<String>(
       context: context,
@@ -1199,10 +1236,48 @@ class _ControlsScreenState extends State<ControlsScreen>
     }
   }
 
+  Future<void> _unlockPc() async {
+    if (_unlockingPc ||
+        _busy ||
+        _device.commandProfile != 'cachyos' ||
+        !_session.isConnected ||
+        _session.deviceId != _device.id) {
+      return;
+    }
+    setState(() => _unlockingPc = true);
+    bool cancelled() => !mounted || ModalRoute.of(context)?.isCurrent != true;
+    try {
+      final outcome = await preparePlasmaDesktop(
+        device: _device,
+        session: _session,
+        cancelled: cancelled,
+      );
+      if (mounted && !cancelled()) {
+        final message = switch (outcome) {
+          PlasmaDesktopPreparation.ready => 'PC is unlocked. Display is awake.',
+          PlasmaDesktopPreparation.displayUnconfirmed =>
+            'PC is unlocked. Display wake could not be confirmed.',
+          PlasmaDesktopPreparation.cancelled => 'PC unlock canceled.',
+        };
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(message)));
+      }
+    } catch (error) {
+      if (mounted && !cancelled()) {
+        final message = error is StateError ? error.message : '$error';
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(message)));
+      }
+    } finally {
+      if (mounted) setState(() => _unlockingPc = false);
+    }
+  }
+
   Future<void> _handleDeviceTool(String tool) async {
     // A connection can close while the tools menu is open.
     const remoteTools = {
       'terminal',
+      'desktop',
       'keyboard',
       'files',
       'remote_downloads',
@@ -1210,9 +1285,10 @@ class _ControlsScreenState extends State<ControlsScreen>
       'screenshot',
       'media',
       'text_size',
+      'plasma_display',
+      'smart_bulb',
       'network_health',
       'bluetooth',
-      'disconnect',
     };
     if (remoteTools.contains(tool) &&
         (!_session.isConnected || _session.deviceId != _device.id)) {
@@ -1220,19 +1296,6 @@ class _ControlsScreenState extends State<ControlsScreen>
     }
 
     switch (tool) {
-      case 'add':
-        await _addCommand();
-        return;
-      case 'paste':
-        await _pasteCommand();
-        return;
-      case 'disconnect':
-        _disconnect();
-        return;
-      case 'connect':
-      case 'reconnect':
-        await _connectFromHome();
-        return;
       case 'terminal':
         await _openTerminal();
         return;
@@ -1249,8 +1312,20 @@ class _ControlsScreenState extends State<ControlsScreen>
           case 'performance':
             screen = PerformanceScreen(session: _session);
           case 'text_size':
-            if (_device.shellStyle != 'windows') return;
-            screen = WindowsTextSizeScreen(session: _session);
+            if (_device.commandProfile == 'cachyos') {
+              screen = PlasmaTextSizeScreen(
+                settings: PlasmaSettings(_device, _session),
+              );
+            } else if (_device.shellStyle == 'windows') {
+              screen = WindowsTextSizeScreen(session: _session);
+            } else {
+              return;
+            }
+          case 'plasma_display':
+            if (_device.commandProfile != 'cachyos') return;
+            screen = PlasmaDisplayScreen(
+              settings: PlasmaSettings(_device, _session),
+            );
           case 'files':
             screen = SftpScreen(
               device: _device,
@@ -1273,6 +1348,9 @@ class _ControlsScreenState extends State<ControlsScreen>
             screen = RemoteKeyboardScreen(device: _device, session: _session);
           case 'media':
             screen = RemoteMediaScreen(device: _device, session: _session);
+          case 'smart_bulb':
+            if (!_isLinuxDevice) return;
+            screen = SmartBulbScreen(bulb: SmartBulb(_device, _session));
           case 'network_health':
             if (!_isLinuxDevice) return;
             screen = LinuxHealthScreen(
@@ -1280,6 +1358,7 @@ class _ControlsScreenState extends State<ControlsScreen>
               session: _session,
               peerDevices: widget.peerDevices,
               onOpenPeer: widget.onOpenPeer,
+              onConnectPeer: widget.onConnectPeer,
             );
           default:
             return;
@@ -1430,6 +1509,53 @@ class _ControlsScreenState extends State<ControlsScreen>
   bool _isPowerControl(RemoteCommand command) =>
       command.category.trim().toLowerCase() == 'power';
 
+  Iterable<RemoteCommand> get _savedPowerControls => _device.commands.where(
+    (command) => _isPowerControl(command) && !_replacedByPlasmaPower(command),
+  );
+
+  bool _replacedByPlasmaPower(RemoteCommand command) {
+    if (_device.commandProfile != 'cachyos' ||
+        !command.requiresSudo ||
+        !command.requiresConfirmation ||
+        command.verificationCommand != null ||
+        command.parameters.isNotEmpty) {
+      return false;
+    }
+    return switch ((command.templateId, command.name, command.command)) {
+      ('linux_suspend', 'Suspend', 'systemctl suspend') ||
+      ('linux_restart', 'Restart', 'systemctl reboot') ||
+      ('linux_shutdown', 'Shutdown', 'systemctl poweroff') => true,
+      _ => false,
+    };
+  }
+
+  Future<void> _runPlasmaPower(PlasmaPowerAction action) async {
+    if (_busy) return;
+    setState(() {
+      _busy = true;
+      _status = null;
+    });
+    try {
+      final accepted = await requestPlasmaPower(
+        context,
+        device: _device,
+        session: _session,
+        action: action,
+      );
+      if (mounted && accepted) {
+        setState(() => _status = '${action.label} requested.');
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(
+          () => _status = error is StateError ? error.message : '$error',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   bool get _isLinuxDevice =>
       _device.shellStyle == 'linux' ||
       _device.commands.any(
@@ -1438,277 +1564,176 @@ class _ControlsScreenState extends State<ControlsScreen>
             command.id.startsWith('linux_'),
       );
 
-  Widget _homeCard({
-    required BuildContext context,
-    required String title,
-    required String subtitle,
-    required IconData icon,
-    required VoidCallback? onTap,
-    String? trailing,
-  }) {
+  Widget _buildConnectionBar(BuildContext context, bool connected) {
     final theme = Theme.of(context);
-    return Card(
-      margin: const EdgeInsets.only(bottom: 14),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(18),
-          child: Row(
-            children: [
-              Icon(icon, color: theme.colorScheme.primary, size: 26),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title, style: theme.textTheme.titleMedium),
-                    const SizedBox(height: 4),
-                    Text(subtitle, style: theme.textTheme.bodySmall),
-                  ],
-                ),
+    final route = _session.connectionRoute;
+    final working = _connecting || _findingLanAddress;
+    final status = connected
+        ? (route == null ? 'Connected' : 'Connected · $route')
+        : _connecting
+        ? 'Connecting…'
+        : _findingLanAddress
+        ? 'Searching on LAN…'
+        : 'Disconnected';
+    final host = connected ? _session.connectedHost : _device.localHost;
+
+    return ColoredBox(
+      color: theme.colorScheme.surfaceContainerLow,
+      child: Padding(
+        padding: const EdgeInsetsDirectional.fromSTEB(16, 8, 8, 8),
+        child: Row(
+          children: [
+            if (working)
+              const SizedBox.square(
+                dimension: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            else
+              Icon(
+                connected ? Icons.check_circle_outline : Icons.link_off,
+                color: connected
+                    ? theme.colorScheme.primary
+                    : theme.colorScheme.onSurfaceVariant,
+                size: 20,
               ),
-              if (trailing != null) ...[
-                Text(trailing, style: theme.textTheme.bodySmall),
-                const SizedBox(width: 8),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(status, style: theme.textTheme.titleSmall),
+                  if (host != null && host.isNotEmpty)
+                    Text(
+                      connected ? host : 'Saved LAN · $host',
+                      style: theme.textTheme.bodySmall,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                ],
+              ),
+            ),
+            if (connected)
+              IconButton(
+                tooltip: 'Disconnect',
+                onPressed: _disconnect,
+                icon: const Icon(Icons.logout),
+              )
+            else ...[
+              FilledButton.tonal(
+                onPressed: working || _busy || widget.onConnect == null
+                    ? null
+                    : _connectFromHome,
+                child: Text(_lostConnection ? 'Reconnect' : 'Connect'),
+              ),
+              if (widget.onFindOnLan != null)
+                IconButton(
+                  tooltip: 'Find on LAN',
+                  onPressed: working ? null : _findDeviceOnLan,
+                  icon: const Icon(Icons.wifi_find),
+                ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildToolGroup(
+    BuildContext context,
+    String title,
+    List<_DeviceTool> tools,
+    bool connected,
+  ) => Padding(
+    padding: const EdgeInsets.only(bottom: 16),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsetsDirectional.fromSTEB(4, 0, 4, 6),
+          child: Text(title, style: Theme.of(context).textTheme.titleMedium),
+        ),
+        Card(
+          margin: EdgeInsets.zero,
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            children: [
+              for (var index = 0; index < tools.length; index++) ...[
+                if (index > 0)
+                  const Divider(height: 1, indent: 56, endIndent: 16),
+                _buildToolRow(tools[index], connected),
               ],
-              const Icon(Icons.chevron_right),
             ],
           ),
         ),
-      ),
+      ],
+    ),
+  );
+
+  Widget _buildToolRow(_DeviceTool tool, bool connected) {
+    final enabled = !tool.needsConnection || connected;
+    return ListTile(
+      enabled: enabled,
+      leading: Icon(tool.icon),
+      title: Text(tool.title),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: enabled ? () => _handleDeviceTool(tool.action) : null,
     );
   }
 
-  Widget _buildDeviceHome(BuildContext context, bool connected) {
-    final route = _session.connectionRoute;
-    final stateText = connected
-        ? 'Connected${route == null ? '' : ' · $route'}'
-        : _connecting
-        ? 'Connecting…'
-        : 'Disconnected';
-    final connectLabel = connected
-        ? null
-        : (_lostConnection ? 'Reconnect' : 'Connect');
-    final stateColor = connected
-        ? Theme.of(context).colorScheme.primary
-        : Theme.of(context).colorScheme.onSurfaceVariant;
-    final statefulCount = _device.commands.where((c) => c.isStateful).length;
-    final commandCount = _device.commands
-        .where((c) => !c.isStateful && !_isPowerControl(c))
-        .length;
-    final tools = <({String action, String title, IconData icon})>[
-      (action: 'terminal', title: 'Terminal', icon: Icons.terminal),
-      (
-        action: 'keyboard',
-        title: 'Remote keyboard',
-        icon: Icons.keyboard_outlined,
-      ),
-      (action: 'files', title: 'Files · SFTP', icon: Icons.folder_outlined),
-      (
-        action: 'remote_downloads',
-        title: 'Remote downloads',
-        icon: Icons.download_outlined,
-      ),
-      (
-        action: 'ota_preparation',
-        title: 'Prepare rooted OTA',
-        icon: Icons.security,
-      ),
-      (
-        action: 'screenshot',
-        title: 'Screenshot',
-        icon: Icons.screenshot_monitor,
-      ),
-      (
-        action: 'desktop',
-        title: 'Live desktop',
-        icon: Icons.desktop_windows_outlined,
-      ),
-      (
-        action: 'media',
-        title: 'Camera & microphone',
-        icon: Icons.videocam_outlined,
-      ),
-      (action: 'bluetooth', title: 'Bluetooth devices', icon: Icons.bluetooth),
-      if (_device.shellStyle == 'windows')
-        (
-          action: 'text_size',
-          title: 'Windows text size',
-          icon: Icons.text_fields,
-        ),
-      if (_isLinuxDevice)
-        (
-          action: 'network_health',
-          title: 'Network & Pi health',
-          icon: Icons.health_and_safety_outlined,
-        ),
-    ];
-
+  Widget _buildDeviceTools(BuildContext context, bool connected) {
+    final cachyos = _device.commandProfile == 'cachyos';
     return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
+      key: const PageStorageKey<String>('device-tools'),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
       children: [
         const AppUpdateBanner(),
-        Card(
-          margin: const EdgeInsets.only(bottom: 20),
-          child: Padding(
-            padding: const EdgeInsets.all(18),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    Icon(
-                      Icons.circle,
-                      size: 13,
-                      color: connected ? Colors.green : stateColor,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            stateText,
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                          if (connected && _session.connectedHost != null)
-                            Text(
-                              'Using ${_session.connectedHost}:${_device.port}',
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                          Text(
-                            'Saved LAN: ${_device.localHost.isEmpty ? 'Not configured' : _device.localHost}',
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                          if (!connected && !_connecting)
-                            Text(
-                              'Saved settings remain available while offline.',
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                        ],
-                      ),
-                    ),
-                    if (_connecting || _findingLanAddress)
-                      const SizedBox.square(
-                        dimension: 22,
-                        child: CircularProgressIndicator(strokeWidth: 2.5),
-                      ),
-                  ],
-                ),
-                if (!connected) ...[
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 4,
-                    alignment: WrapAlignment.end,
-                    children: [
-                      if (connectLabel != null)
-                        FilledButton.tonal(
-                          onPressed: _busy || _connecting
-                              ? null
-                              : _connectFromHome,
-                          child: Text(connectLabel),
-                        ),
-                      OutlinedButton.icon(
-                        onPressed: _findingLanAddress || _connecting
-                            ? null
-                            : _findDeviceOnLan,
-                        icon: const Icon(Icons.wifi_find),
-                        label: Text(
-                          _findingLanAddress ? 'Searching…' : 'Find on LAN',
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ],
-            ),
+        _buildToolGroup(context, 'Remote access', [
+          const _DeviceTool(
+            'desktop',
+            'Live desktop',
+            Icons.desktop_windows_outlined,
           ),
-        ),
-        Text('Remote tools', style: Theme.of(context).textTheme.titleLarge),
-        const SizedBox(height: 10),
-        LayoutBuilder(
-          builder: (context, constraints) {
-            const spacing = 12.0;
-            final tileWidth = (constraints.maxWidth - spacing) / 2;
-            return Wrap(
-              spacing: spacing,
-              runSpacing: spacing,
-              children: [
-                for (final tool in tools)
-                  SizedBox(
-                    width: tileWidth,
-                    child: _toolTile(
-                      context,
-                      tool.action,
-                      tool.title,
-                      tool.icon,
-                      connected,
-                    ),
-                  ),
-              ],
-            );
-          },
-        ),
-        const SizedBox(height: 18),
-        _homeCard(
-          context: context,
-          title: 'Control panel',
-          subtitle: 'Display, network and power controls',
-          icon: Icons.tune,
-          trailing:
-              '${statefulCount + _device.commands.where(_isPowerControl).length}',
-          onTap: () {
-            setState(() => _view = 'controls');
-            if (connected) unawaited(_refreshStatefulStatuses());
-          },
-        ),
-        _homeCard(
-          context: context,
-          title: 'Commands',
-          subtitle: 'Custom actions and system commands',
-          icon: Icons.terminal,
-          trailing: '$commandCount',
-          onTap: () => setState(() => _view = 'commands'),
-        ),
+          const _DeviceTool(
+            'keyboard',
+            'Remote keyboard',
+            Icons.keyboard_outlined,
+          ),
+          const _DeviceTool('terminal', 'Terminal', Icons.terminal),
+        ], connected),
+        _buildToolGroup(context, 'Files & updates', const [
+          _DeviceTool('files', 'Files · SFTP', Icons.folder_outlined),
+          _DeviceTool(
+            'remote_downloads',
+            'Remote downloads',
+            Icons.download_outlined,
+          ),
+          _DeviceTool('ota_preparation', 'Prepare rooted OTA', Icons.security),
+        ], connected),
+        _buildToolGroup(context, 'Media', const [
+          _DeviceTool('screenshot', 'Screenshot', Icons.screenshot_monitor),
+          _DeviceTool('media', 'Camera & microphone', Icons.videocam_outlined),
+        ], connected),
+        _buildToolGroup(context, 'Device & network', [
+          if (_isLinuxDevice)
+            _DeviceTool(
+              'network_health',
+              cachyos ? 'Network & system health' : 'Network & Pi health',
+              Icons.health_and_safety_outlined,
+            ),
+          const _DeviceTool(
+            'information',
+            'Device information',
+            Icons.info_outline,
+            needsConnection: false,
+          ),
+          const _DeviceTool(
+            'performance',
+            'Performance & connection',
+            Icons.speed,
+            needsConnection: false,
+          ),
+        ], connected),
       ],
-    );
-  }
-
-  Widget _toolTile(
-    BuildContext context,
-    String action,
-    String title,
-    IconData icon,
-    bool connected,
-  ) {
-    final theme = Theme.of(context);
-    return Card(
-      margin: EdgeInsets.zero,
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: connected ? () => _handleDeviceTool(action) : null,
-        child: SizedBox(
-          height: 104,
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  icon,
-                  color: connected
-                      ? theme.colorScheme.onSurface
-                      : theme.disabledColor,
-                ),
-                const SizedBox(height: 8),
-                Text(title, textAlign: TextAlign.center),
-              ],
-            ),
-          ),
-        ),
-      ),
     );
   }
 
@@ -1719,13 +1744,107 @@ class _ControlsScreenState extends State<ControlsScreen>
     )) {
       categories.putIfAbsent(command.category, () => []).add(command);
     }
-    final powerCommands = _device.commands.where(_isPowerControl).toList();
+    final powerCommands = _savedPowerControls.toList();
+    final cachyos = _device.commandProfile == 'cachyos';
+    final windows = _device.shellStyle == 'windows';
+    final plasmaPower = cachyos
+        ? PlasmaPowerAction.values
+        : const <PlasmaPowerAction>[];
+    final canUsePower = connected && !_busy && !_unlockingPc;
     return RefreshIndicator(
       onRefresh: () => _refreshStatefulStatuses(allowPrompt: true),
       child: ListView(
+        key: const PageStorageKey<String>('device-controls'),
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
         children: [
+          if (powerCommands.isNotEmpty || plasmaPower.isNotEmpty) ...[
+            _buildCategoryHeader(
+              context,
+              'Power controls',
+              powerCommands.length + plasmaPower.length + (cachyos ? 1 : 0),
+            ),
+            Card(
+              margin: const EdgeInsets.only(bottom: 16),
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        const gap = 8.0;
+                        final width = (constraints.maxWidth - gap * 2) / 3;
+                        return Wrap(
+                          spacing: gap,
+                          runSpacing: gap,
+                          children: [
+                            for (final action in plasmaPower) ...[
+                              SizedBox(
+                                width: width,
+                                child: _buildPowerButton(
+                                  action.label,
+                                  action.icon,
+                                  canUsePower
+                                      ? () => _runPlasmaPower(action)
+                                      : null,
+                                ),
+                              ),
+                              if (action == PlasmaPowerAction.lock)
+                                SizedBox(
+                                  width: width,
+                                  child: _buildPowerButton(
+                                    _unlockingPc
+                                        ? 'Unlocking PC…'
+                                        : 'Unlock PC',
+                                    Icons.lock_open_outlined,
+                                    canUsePower ? _unlockPc : null,
+                                  ),
+                                ),
+                            ],
+                            for (final command in powerCommands)
+                              SizedBox(
+                                width: width,
+                                child: _buildPowerControl(
+                                  command,
+                                  connected && !_unlockingPc,
+                                ),
+                              ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          if (windows || cachyos)
+            _buildToolGroup(context, 'Display', [
+              if (cachyos)
+                const _DeviceTool(
+                  'plasma_display',
+                  'Display configuration',
+                  Icons.display_settings_outlined,
+                ),
+              _DeviceTool(
+                'text_size',
+                windows ? 'Windows text size' : 'Plasma text size',
+                Icons.text_fields,
+              ),
+            ], connected),
+          _buildToolGroup(context, 'Accessories', [
+            const _DeviceTool(
+              'bluetooth',
+              'Bluetooth devices',
+              Icons.bluetooth,
+            ),
+            if (_isLinuxDevice)
+              const _DeviceTool(
+                'smart_bulb',
+                'Smart bulb',
+                Icons.lightbulb_outline,
+              ),
+          ], connected),
           for (final entry in categories.entries) ...[
             _buildCategoryHeader(
               context,
@@ -1737,36 +1856,6 @@ class _ControlsScreenState extends State<ControlsScreen>
             for (final command in entry.value)
               _buildCommandItem(command, connected),
           ],
-          if (powerCommands.isNotEmpty) ...[
-            _buildCategoryHeader(
-              context,
-              'Power controls',
-              powerCommands.length,
-            ),
-            Card(
-              margin: const EdgeInsets.only(bottom: 16),
-              child: Padding(
-                padding: const EdgeInsets.all(8),
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    const gap = 8.0;
-                    final width = (constraints.maxWidth - gap * 2) / 3;
-                    return Wrap(
-                      spacing: gap,
-                      runSpacing: gap,
-                      children: [
-                        for (final command in powerCommands)
-                          SizedBox(
-                            width: width,
-                            child: _buildPowerControl(command, connected),
-                          ),
-                      ],
-                    );
-                  },
-                ),
-              ),
-            ),
-          ],
           if (_busy) const Center(child: CircularProgressIndicator()),
           if (_status != null && !_busy)
             Padding(
@@ -1777,6 +1866,21 @@ class _ControlsScreenState extends State<ControlsScreen>
       ),
     );
   }
+
+  Widget _buildPowerButton(
+    String label,
+    IconData icon,
+    VoidCallback? pressed,
+  ) => Column(
+    children: [
+      IconButton.filledTonal(
+        tooltip: label,
+        onPressed: pressed,
+        icon: Icon(icon),
+      ),
+      Text(label, textAlign: TextAlign.center),
+    ],
+  );
 
   Widget _buildPowerControl(RemoteCommand command, bool connected) {
     return Column(
@@ -1815,18 +1919,32 @@ class _ControlsScreenState extends State<ControlsScreen>
       categories.putIfAbsent(command.category, () => []).add(command);
     }
     return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
+      key: const PageStorageKey<String>('device-commands'),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
       children: [
-        Text('Commands', style: Theme.of(context).textTheme.titleLarge),
-        const SizedBox(height: 4),
-        Text('Custom actions for this device.'),
-        const SizedBox(height: 14),
+        Wrap(
+          spacing: 8,
+          runSpacing: 4,
+          children: [
+            FilledButton.icon(
+              onPressed: _addCommand,
+              icon: const Icon(Icons.add),
+              label: const Text('Add command'),
+            ),
+            OutlinedButton.icon(
+              onPressed: _pasteCommand,
+              icon: const Icon(Icons.content_paste),
+              label: const Text('Paste command'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
         if (categories.isEmpty)
           Card(
             child: Padding(
               padding: const EdgeInsets.all(20),
               child: Text(
-                'No custom commands yet. Add a command from the menu.',
+                'No saved commands yet.',
                 textAlign: TextAlign.center,
               ),
             ),
@@ -1857,74 +1975,47 @@ class _ControlsScreenState extends State<ControlsScreen>
       builder: (context, _) {
         final connected =
             _session.isConnected && _session.deviceId == _device.id;
-        final title = switch (_view) {
-          'controls' => 'Control panel',
-          'commands' => 'Commands',
-          _ => _device.name,
-        };
-
         return PopScope(
-          canPop: _view == 'home',
+          canPop: _tab == _DeviceTab.tools,
           onPopInvokedWithResult: (didPop, result) {
-            if (!didPop && _view != 'home') {
-              setState(() => _view = 'home');
+            if (!didPop && _tab != _DeviceTab.tools) {
+              _tabs.animateTo(_DeviceTab.tools.index);
             }
           },
           child: Scaffold(
             appBar: AppBar(
-              leading: _view == 'home'
+              leading: _tab == _DeviceTab.tools
                   ? null
-                  : IconButton(
-                      tooltip: 'Back to ${_device.name}',
-                      icon: const Icon(Icons.arrow_back),
-                      onPressed: () => setState(() => _view = 'home'),
+                  : BackButton(
+                      onPressed: () => _tabs.animateTo(_DeviceTab.tools.index),
                     ),
-              title: Text(title),
-              actions: [
-                PopupMenuButton<String>(
-                  tooltip: 'Device menu',
-                  onSelected: (value) => _handleDeviceTool(value),
-                  itemBuilder: (context) => [
-                    const PopupMenuItem(
-                      value: 'information',
-                      child: Text('Device information'),
-                    ),
-                    const PopupMenuItem(
-                      value: 'performance',
-                      child: Text('Performance & connection'),
-                    ),
-                    const PopupMenuDivider(),
-                    if (_view != 'commands')
-                      const PopupMenuItem(
-                        value: 'add',
-                        child: Text('Add command'),
-                      ),
-                    const PopupMenuItem(
-                      value: 'paste',
-                      child: Text('Paste command'),
-                    ),
-                    if (connected)
-                      const PopupMenuItem(
-                        value: 'disconnect',
-                        child: Text('Disconnect'),
-                      ),
-                  ],
-                ),
-              ],
+              title: Text(_device.name, overflow: TextOverflow.ellipsis),
             ),
-            floatingActionButton: _view == 'commands'
-                ? FloatingActionButton.extended(
-                    onPressed: _addCommand,
-                    icon: const Icon(Icons.add),
-                    label: const Text('Add command'),
-                  )
-                : null,
             body: SafeArea(
-              child: switch (_view) {
-                'controls' => _buildControlPanel(context, connected),
-                'commands' => _buildCommands(context, connected),
-                _ => _buildDeviceHome(context, connected),
-              },
+              child: Column(
+                children: [
+                  _buildConnectionBar(context, connected),
+                  TabBar(
+                    controller: _tabs,
+                    labelPadding: const EdgeInsets.symmetric(horizontal: 4),
+                    tabs: const [
+                      Tab(text: 'Tools'),
+                      Tab(text: 'Controls'),
+                      Tab(text: 'Commands'),
+                    ],
+                  ),
+                  Expanded(
+                    child: TabBarView(
+                      controller: _tabs,
+                      children: [
+                        _buildDeviceTools(context, connected),
+                        _buildControlPanel(context, connected),
+                        _buildCommands(context, connected),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         );

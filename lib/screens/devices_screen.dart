@@ -10,6 +10,7 @@ import '../services/device_discovery.dart';
 import 'settings_screen.dart';
 import '../widgets/app_update_banner.dart';
 
+import '../ssh/ssh_session.dart';
 import '../ssh/ssh_session_manager.dart';
 
 import '../devices/delete_device_dialog.dart';
@@ -391,6 +392,17 @@ class _DevicesScreenState extends State<DevicesScreen> {
     }
   }
 
+  Future<SshSession> _connectPeer(Device peer) async {
+    final session = sshSessions.sessionFor(peer.id);
+    if (!session.isConnected || !await session.healthCheck()) {
+      await _connectDevice(peer, openControls: false);
+    }
+    if (!session.isConnected || session.deviceId != peer.id) {
+      throw StateError(_error ?? 'Could not connect to ${peer.name}.');
+    }
+    return session;
+  }
+
   Future<void> _showControls(Device device) async {
     final session = sshSessions.sessionFor(device.id);
 
@@ -404,6 +416,7 @@ class _DevicesScreenState extends State<DevicesScreen> {
           autoConnectOnOpen: true,
 
           peerDevices: _devices.where((item) => item.id != device.id).toList(),
+          onConnectPeer: _connectPeer,
           onOpenPeer: (peer) => _showControls(
             _devices.firstWhere(
               (item) => item.id == peer.id,
