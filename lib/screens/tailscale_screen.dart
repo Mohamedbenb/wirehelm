@@ -27,6 +27,7 @@ class _TailscaleScreenState extends State<TailscaleScreen>
   bool _debugBusy = false;
   bool _temporaryRoot = false;
   bool _peerSuggested = false;
+  bool _pcEdited = false;
   String? _debugError;
   int _debugRevision = 0;
 
@@ -55,6 +56,18 @@ class _TailscaleScreenState extends State<TailscaleScreen>
     if (_active) unawaited(_refresh());
   }
 
+  void _showDebugStatus(Map<String, dynamic> debug) {
+    _debug = debug;
+    final active = debug['enabled'] == true;
+    final pc = debug[active ? 'allowedPC' : 'preferredPC'] as String? ?? '';
+    if (active) _pcEdited = false;
+    if (pc.isNotEmpty &&
+        _debugPC.text != pc &&
+        (active || (!_pcEdited && _debugPC.text.isEmpty))) {
+      _debugPC.text = pc;
+    }
+  }
+
   Future<void> _refresh() async {
     if (_busy || _debugBusy || !mounted) return;
     final debugRevision = _debugRevision;
@@ -63,24 +76,27 @@ class _TailscaleScreenState extends State<TailscaleScreen>
       final status = await _client.status();
       final debug = await _client.debugRelayStatus();
       if (!mounted) return;
-      if (status.isReady && !_peerSuggested) {
+      setState(() {
+        _status = status;
+        if (debugRevision == _debugRevision) _showDebugStatus(debug);
+        _error = null;
+      });
+      if (status.isReady &&
+          !_peerSuggested &&
+          !_pcEdited &&
+          _debugPC.text.isEmpty &&
+          debugRevision == _debugRevision) {
         final peers = await _client.peers();
-        if (!mounted) return;
+        if (!mounted || debugRevision != _debugRevision) return;
         final candidates = peers.where(
           (p) => p['os'] == 'windows' && p['online'] == true,
         );
-        if (candidates.isNotEmpty && _debugPC.text.isEmpty) {
+        if (candidates.isNotEmpty && !_pcEdited && _debugPC.text.isEmpty) {
           final ips = (candidates.first['ips'] as List? ?? []).cast<String>();
           if (ips.isNotEmpty) _debugPC.text = ips.first;
         }
         _peerSuggested = true;
       }
-      if (!mounted) return;
-      setState(() {
-        _status = status;
-        if (debugRevision == _debugRevision) _debug = debug;
-        _error = null;
-      });
     } catch (error) {
       if (!mounted) return;
       setState(() => _error = error.toString());
@@ -103,15 +119,16 @@ class _TailscaleScreenState extends State<TailscaleScreen>
         );
         if (mounted) {
           setState(() {
-            _debug = value;
+            _showDebugStatus(value);
             _debugError = null;
           });
         }
       } else {
         await _client.stopDebugRelay();
+        final status = await _client.debugRelayStatus();
         if (mounted) {
           setState(() {
-            _debug = const {};
+            _showDebugStatus(status);
             _debugError = null;
           });
         }
@@ -126,7 +143,7 @@ class _TailscaleScreenState extends State<TailscaleScreen>
       if (mounted) {
         setState(() {
           _debugError = message;
-          _debug = diagnostics;
+          _showDebugStatus(diagnostics);
         });
       }
     } finally {
@@ -142,7 +159,7 @@ class _TailscaleScreenState extends State<TailscaleScreen>
     });
     try {
       final result = await _client.setDebugRelayDuration(minutes);
-      if (mounted) setState(() => _debug = result);
+      if (mounted) setState(() => _showDebugStatus(result));
     } catch (error) {
       if (mounted) {
         setState(
@@ -164,7 +181,7 @@ class _TailscaleScreenState extends State<TailscaleScreen>
     });
     try {
       final value = await _client.setDebugResume(enabled);
-      if (mounted) setState(() => _debug = value);
+      if (mounted) setState(() => _showDebugStatus(value));
     } on PlatformException catch (error) {
       if (mounted) setState(() => _debugError = error.message ?? error.code);
     } finally {
@@ -205,6 +222,7 @@ class _TailscaleScreenState extends State<TailscaleScreen>
             TextField(
               controller: _debugPC,
               enabled: !enabled && !_debugBusy,
+              onChanged: (_) => _pcEdited = true,
               decoration: const InputDecoration(
                 labelText: 'Permitted PC · Tailscale IP',
                 hintText: '100.x.x.x',

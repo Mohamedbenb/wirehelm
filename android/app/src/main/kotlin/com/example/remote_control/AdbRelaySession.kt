@@ -27,6 +27,7 @@ class AdbRelaySession(context: Context, private val node: Node, private val work
 
     companion object {
         private const val RESUME_KEY = "updateResumeSession"
+        private const val PREFERRED_PC_KEY = "preferredPC"
         private const val PREFS = "temporary_adb_relay"
         @Suppress("DEPRECATION")
         private fun version(context: Context): Long {
@@ -50,6 +51,12 @@ class AdbRelaySession(context: Context, private val node: Node, private val work
     }
 
     private fun boot() = Settings.Global.getInt(appContext.contentResolver, Settings.Global.BOOT_COUNT, -1)
+
+    private fun rememberPermittedPC(pc: String) {
+        if (pc.isNotBlank() && saved.getString(PREFERRED_PC_KEY, null) != pc) {
+            saved.edit().putString(PREFERRED_PC_KEY, pc).apply()
+        }
+    }
 
     private fun rememberForUpdate(deadline: Long, elapsedDeadline: Long? = null) {
         if (!saved.getBoolean("resumeAfterUpdate", false)) return
@@ -110,12 +117,14 @@ class AdbRelaySession(context: Context, private val node: Node, private val work
             val left = remaining()
             check(left > 0) { "The Remote ADB session expired during the update" }
             val effectiveDeadline = System.currentTimeMillis() + left
-            node.resumeDebugRelay(port.toLong(), record.getString("pc"),
+            val pc = record.getString("pc")
+            node.resumeDebugRelay(port.toLong(), pc,
                 saved.getInt("durationMinutes", 30).toLong(), effectiveDeadline)
             mode = if (temporaryRoot) "Temporary protected local ADB" else "Existing wireless ADB"
             rememberForUpdate(effectiveDeadline, elapsedDeadline)
             scheduleExpiry()
             AdbRelayService.update(appContext, effectiveDeadline)
+            rememberPermittedPC(pc)
         } catch (error: Exception) {
             android.util.Log.w("WirehelmAdb", "Remote ADB resume failed", error)
             recordResumeFailure(appContext, error)
@@ -180,9 +189,12 @@ class AdbRelaySession(context: Context, private val node: Node, private val work
                 mode = "Existing wireless ADB"
             }
             node.startDebugRelayWithDuration(localPort.toLong(), pc, saved.getInt("durationMinutes", 30).toLong())
-            rememberForUpdate(JSONObject(node.debugRelayStatus()).optLong("expiresAt"))
+            val current = JSONObject(node.debugRelayStatus())
+            val deadline = current.getLong("expiresAt")
+            rememberForUpdate(deadline)
             scheduleExpiry()
-            AdbRelayService.update(appContext, JSONObject(node.debugRelayStatus()).optLong("expiresAt"))
+            AdbRelayService.update(appContext, deadline)
+            rememberPermittedPC(current.getString("allowedPC"))
             return status()
         } catch (error: Exception) {
             val details = runCatching { JSONObject(saved.getString("lastAttempt", "{}") ?: "{}") }.getOrDefault(JSONObject())
@@ -272,6 +284,7 @@ class AdbRelaySession(context: Context, private val node: Node, private val work
         result.put("resumeAfterUpdate", saved.getBoolean("resumeAfterUpdate", false))
         result.put("mode", mode).put("temporaryRoot", saved.getBoolean("owned", false))
             .put("preferredDurationMinutes", saved.getInt("durationMinutes", 30))
+            .put("preferredPC", saved.getString(PREFERRED_PC_KEY, "") ?: "")
         cleanupError?.let { result.put("cleanupError", it) }
         saved.getString("lastAttempt", null)?.let { runCatching { result.put("diagnostics", JSONObject(it)) } }
         return result.toString()
