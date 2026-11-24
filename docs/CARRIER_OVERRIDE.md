@@ -7,7 +7,7 @@ The v3 backend ships a small Android DEX patcher, not a vendor database. The sea
 - `scripts/carrier/CarrierDatabaseTool.java`: read-only compatibility inspection, copy/patch/validation and stock backups.
 - `modules/node-cockpit-carrier/`: KernelSU scripts, fixed vendor target, selected MCCMNC list and mount status.
 - `scripts/package_customization.py`: compiles the standalone DEX and packages a code-only module. Requires a JDK, Android SDK platform and D8.
-- App-side `LocalCustomization` and the carrier page manage installation, explicit enable/disable and status. Module ID and app signing identity are retained.
+- The carrier page shows the current firmware status and asks for confirmation before passing install, enable or restore operations to `LocalCustomization`. [Carrier settings](../lib/screens/carrier_override_screen.dart)
 
 This is portable across compatible firmware databases, not universal support for every device, modem or carrier. It requires `/vendor/firmware/carrierconfig/cfg.db`, the supported three-column confmap schema, an unambiguous carrier_info identity for each selected MCCMNC, and a nonempty stock wildcard_5g profile. It refuses unsupported or ambiguous inputs. It does not unlock unsupported bands or bypass carrier provisioning. Selections persist separately in the private state directory across module updates. The picker supports carrier names and MCC/MNC searches, retaining selections across searches. There is no all-carrier automatic mode.
 

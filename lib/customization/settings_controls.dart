@@ -83,3 +83,23 @@ class CustomizationSlider extends StatelessWidget {
     );
   }
 }
+
+class CustomizationDetail extends StatelessWidget {
+  const CustomizationDetail(this.label, this.value, {super.key});
+
+  final String label;
+  final Object? value;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 4),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(child: Text(label)),
+        const SizedBox(width: 16),
+        Expanded(child: Text('$value', textAlign: TextAlign.end)),
+      ],
+    ),
+  );
+}

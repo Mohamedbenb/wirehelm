@@ -3,7 +3,6 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
-import '../customization/carrier_selection_dialog.dart';
 import '../customization/customization_health.dart';
 import '../customization/local_customization.dart';
 import '../customization/saved_setup_sheet.dart';
@@ -14,6 +13,7 @@ import 'app_network_screen.dart';
 import 'battery_usage_screen.dart';
 import 'button_shortcuts_screen.dart';
 import 'camera_ring_screen.dart';
+import 'carrier_override_screen.dart';
 import 'clipboard_shelf_screen.dart';
 import 'customization_health_screen.dart';
 import 'device_snapshot_screen.dart';
@@ -503,90 +503,6 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
     if (yes == true) await _run('install');
   }
 
-  Future<void> _installCarrier({required bool update}) async {
-    final yes = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(
-          update ? 'Update carrier backend?' : 'Install carrier backend?',
-        ),
-        content: Text(
-          update
-              ? 'This replaces the old bundled database with a firmware-local generator. Disabled overrides stay disabled. Reboot to finish the backend update, then enable it when ready.'
-              : 'This installs a disabled KernelSU backend. After reboot, enable it to derive Tunisie Telecom and Orange mappings from the current vendor database. Unsupported database layouts stay stock.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(update ? 'Update' : 'Install'),
-          ),
-        ],
-      ),
-    );
-    if (yes == true) await _run('installCarrier');
-  }
-
-  Future<void> _chooseCarriers(Map<String, dynamic> carrier) async {
-    final current = '${carrier['selectedCarriers'] ?? '60502,60501'}'
-        .split(',')
-        .toSet();
-    final result = await showDialog<Set<String>>(
-      context: context,
-      builder: (_) => CarrierSelectionDialog(
-        selected: current,
-        load: (query) =>
-            LocalCustomization.call('carrierCatalog', {'query': query}),
-      ),
-    );
-    if (!mounted ||
-        result == null ||
-        (result.length == current.length && result.containsAll(current))) {
-      return;
-    }
-    await _run(
-      'configureCarriers',
-      arguments: {'carriers': (result.toList()..sort()).join(',')},
-    );
-  }
-
-  Future<void> _setCarrierEnabled(bool enabled) async {
-    final yes = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(
-          enabled ? 'Enable carrier override?' : 'Restore stock behavior?',
-        ),
-        content: Text(
-          enabled
-              ? 'At the next boot, the backend will copy the current vendor database, resolve its stock 5G profile and patch only the selected carrier mappings. Unsupported layouts stay stock. A stock backup is retained.'
-              : 'KernelSU will stop exposing the cfgdb override after the next reboot. The stock vendor database itself has never been modified.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(enabled ? 'Enable' : 'Restore stock'),
-          ),
-        ],
-      ),
-    );
-    if (yes == true) await _run(enabled ? 'enableCarrier' : 'disableCarrier');
-  }
-
-  String _carrierSims(Map<String, dynamic> carrier) {
-    final sims =
-        (carrier['activeSims'] as List?)?.whereType<Map>().toList() ?? const [];
-    if (sims.isEmpty) return 'No supported SIM details';
-    return sims.map((s) => '${s['name']} · ${s['mccmnc']}').join('\n');
-  }
-
   Future<void> _restartSystemUi() async {
     final yes = await showDialog<bool>(
       context: context,
@@ -610,17 +526,6 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
     if (yes == true) await _run('restartSystemUi');
   }
 
-  Widget _line(String label, Object? value) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 4),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(child: Text(label)),
-        const SizedBox(width: 16),
-        Expanded(child: Text('$value', textAlign: TextAlign.end)),
-      ],
-    ),
-  );
   Future<void> _openHealth() async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -628,142 +533,6 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
       ),
     );
     if (mounted) _run('probe');
-  }
-
-  String _carrierSummary(Map<String, dynamic> carrier) =>
-      carrier['active'] == true
-      ? 'Active'
-      : carrier['rebootRequired'] == true
-      ? 'Change waiting for reboot'
-      : carrier['installed'] == true
-      ? 'Installed · '
-      : 'Backend not installed';
-
-  Widget _carrierFeature(Map<String, dynamic> data) {
-    final carrier = healthSection(data, 'carrier');
-    return CustomizationCard('Carrier profile override', [
-      Text(
-        carrier['active'] == true
-            ? 'Active'
-            : carrier['rebootRequired'] == true
-            ? 'Change waiting for reboot'
-            : carrier['installed'] == true
-            ? 'Installed · ${carrier['moduleState'] ?? 'unknown'}'
-            : 'Backend not installed',
-        style: Theme.of(context).textTheme.titleMedium,
-      ),
-      const SizedBox(height: 10),
-      _line('Selected carriers', carrier['selectedCarriers'] ?? '60502,60501'),
-      if (carrier['installed'] == true && carrier['updateRequired'] != true)
-        OutlinedButton.icon(
-          onPressed: _busy ? null : () => _chooseCarriers(carrier),
-          icon: const Icon(Icons.search),
-          label: const Text('Choose carriers'),
-        ),
-      _line('Mode', 'Firmware-local'),
-      _line('SIMs', _carrierSims(carrier)),
-      _line(
-        'Current carrier ID',
-        (carrier['currentCarrierId'] as num? ?? -1) > 0
-            ? carrier['currentCarrierId']
-            : 'Not reported',
-      ),
-      _line('Intended profile', carrier['intendedProfile'] ?? '—'),
-      _line('Data network', carrier['dataNetworkName'] ?? '—'),
-      if (carrier['nrAvailable'] != null)
-        _line('NR available', carrier['nrAvailable']),
-      if (carrier['endcAvailable'] != null)
-        _line('EN-DC available', carrier['endcAvailable']),
-      if (carrier['nrState'] != null) _line('NR state', carrier['nrState']),
-      if (carrier['nrFrequencyRange'] != null)
-        _line('NR frequency range', carrier['nrFrequencyRange']),
-      _line(
-        'Configuration',
-        carrier['rebootRequired'] == true && carrier['sourceFound'] != 'true'
-            ? 'Staged · generates from current firmware after reboot'
-            : carrier['configurationValid'] == true
-            ? 'Current vendor copy and selected mappings verified'
-            : carrier['databaseCompatible'] == true &&
-                  carrier['moduleState'] == 'disabled'
-            ? 'Compatible vendor database · generates when enabled'
-            : carrier['sourceFound'] == 'true'
-            ? 'Unexpected database'
-            : 'Not installed',
-      ),
-      _line(
-        'Systemless override',
-        carrier['mounted'] == true ? 'Mounted' : 'Not mounted',
-      ),
-      if (carrier['supportedCarrierDetected'] != true)
-        const Padding(
-          padding: EdgeInsets.only(top: 10),
-          child: Text(
-            'No selected carrier is currently detected. You can configure carriers before inserting their SIMs.',
-          ),
-        ),
-      if (carrier['rebootRequired'] == true)
-        const Padding(
-          padding: EdgeInsets.only(top: 10),
-          child: Text(
-            'Reboot required. Radio or airplane-mode cycling is not used because the modem may retain the previous database.',
-          ),
-        ),
-      if (carrier['lastMount'] != null && '${carrier['lastMount']}'.isNotEmpty)
-        Padding(
-          padding: const EdgeInsets.only(top: 8),
-          child: Text(
-            '${carrier['lastMount']}',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-        ),
-      const SizedBox(height: 14),
-      Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: [
-          if (carrier['installed'] != true)
-            FilledButton.icon(
-              onPressed: _busy || carrier['backendAvailable'] != true
-                  ? null
-                  : () => _installCarrier(update: false),
-              icon: const Icon(Icons.download_outlined),
-              label: const Text('Install backend'),
-            ),
-          if (carrier['updateRequired'] == true)
-            FilledButton.icon(
-              onPressed: _busy || carrier['backendAvailable'] != true
-                  ? null
-                  : () => _installCarrier(update: true),
-              icon: const Icon(Icons.system_update_alt),
-              label: const Text('Update backend'),
-            ),
-          if (carrier['installed'] == true &&
-              carrier['updateRequired'] != true &&
-              carrier['rebootRequired'] != true &&
-              carrier['moduleState'] == 'disabled')
-            FilledButton.icon(
-              onPressed: _busy || carrier['databaseCompatible'] != true
-                  ? null
-                  : () => _setCarrierEnabled(true),
-              icon: const Icon(Icons.power_settings_new),
-              label: const Text('Enable override'),
-            ),
-          if (carrier['installed'] == true &&
-              carrier['rebootRequired'] != true &&
-              carrier['moduleState'] == 'enabled')
-            OutlinedButton.icon(
-              onPressed: _busy ? null : () => _setCarrierEnabled(false),
-              icon: const Icon(Icons.settings_backup_restore),
-              label: const Text('Restore stock'),
-            ),
-        ],
-      ),
-      const SizedBox(height: 10),
-      Text(
-        'Carrier IDs and wildcard_5g are resolved from this firmware. A compatible cfgdb is required; this does not unlock every modem or guarantee network 5G availability.',
-        style: Theme.of(context).textTheme.bodySmall,
-      ),
-    ], icon: Icons.network_cell_outlined);
   }
 
   bool _setupComplete(Map<String, dynamic> data) {
@@ -1012,11 +781,11 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
     return Column(
       children: [
         CustomizationCard('Backends', [
-          _line(
+          CustomizationDetail(
             'Vector manager',
             vectorInstalled ? 'Installed' : 'Not installed',
           ),
-          _line(
+          CustomizationDetail(
             'SystemUI',
             frameworkConnected
                 ? '${xp['name']} connected'
@@ -1024,11 +793,11 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
                 ? 'Hook bridge active'
                 : 'Not connected',
           ),
-          _line(
+          CustomizationDetail(
             'Root',
             root['authorized'] == true ? 'KernelSU verified' : 'Not verified',
           ),
-          _line(
+          CustomizationDetail(
             'Recovery',
             root['moduleState'] == 'healthy'
                 ? 'Watchdog ready'
@@ -1386,14 +1155,18 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
             ),
             _featureLink(
               title: 'Carrier profile override',
-              subtitle: _carrierSummary(_section('carrier')),
+              subtitle: carrierOverrideStatus(_section('carrier')),
               icon: Icons.network_cell_outlined,
               onTap: () async {
                 await _run('probe', arguments: {'requestRoot': true});
                 if (mounted) {
                   await _openFeature(
                     'Carrier profile override',
-                    _carrierFeature,
+                    (report) => CarrierOverrideScreen(
+                      carrier: healthSection(report, 'carrier'),
+                      busy: _busy,
+                      onOperation: _run,
+                    ),
                   );
                 }
               },
