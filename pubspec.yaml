@@ -69,6 +69,7 @@ flutter:
   # the material Icons class.
   uses-material-design: true
   assets:
+    - assets/automation/smart_bulb.py
     - assets/desktop/wayland.py
     - assets/desktop/plasma_settings.py
     - assets/licenses/termux.txt

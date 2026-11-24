@@ -53,3 +53,9 @@ The port targets the signed-in KDE Wayland session. Windows display presets, ada
 ## Verification
 
 The CachyOS PC granted a keyboard-only portal session and the worker closed it on disconnect. A second approved session produced a PipeWire JPEG in memory and delivered Enter to a focused temporary window. With persistent approval, new keyboard and live desktop workers restored their sessions on the same PC without another prompt. The restored desktop produced a fresh JPEG. The tests discarded the captured pixels and did not exercise the Android app connection.
+
+## Smart bulb
+
+Open the Linux device in Wirehelm and select **Controls → Accessories → Smart bulb**. The SSH host talks to the bulb over its LAN. Use an always-on host such as a Raspberry Pi when you need control while the desktop sleeps.
+
+On a new host, tap **Install TinyTuya** and **Set up bulb**. Enter the bulb's LAN IPv4 address, Smart Life Virtual ID, and Tuya local key. The host verifies the connection before saving the configuration in its private Wirehelm settings. The current screen supports standard Tuya RGB and tunable-white bulbs with data points 20–24. Power and mode changes apply immediately. Moving a slider sends live updates, and releasing it sends the final setting.
