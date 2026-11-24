@@ -2,7 +2,43 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:remote_control/customization/network_indicator_preview.dart';
 
+import 'fixtures/customization_report.dart';
+
 void main() {
+  testWidgets('preview removes upload and stays usable at narrow widths', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final config = Map<String, dynamic>.from(healthyCustomizationReport()['config']);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Padding(
+            padding: const EdgeInsets.all(24),
+            child: NetworkIndicatorPreview(config: config),
+          ),
+        ),
+      ),
+    );
+    expect(find.text('3.2'), findsOneWidget);
+    config['showUpload'] = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Padding(
+            padding: const EdgeInsets.all(24),
+            child: NetworkIndicatorPreview(config: config),
+          ),
+        ),
+      ),
+    );
+    expect(find.text('3.2'), findsNothing);
+    expect(find.text('24.8'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
   testWidgets('designs and unit modes fit narrow previews with large UI text', (tester) async {
     for (final design in ['plain', 'pill', 'outline', 'mono', 'glass', 'box', 'split', 'badge']) {
       for (final mode in ['full', 'unit', 'prefix', 'none', 'custom']) {

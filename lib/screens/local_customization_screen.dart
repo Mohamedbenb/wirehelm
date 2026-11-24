@@ -1,30 +1,30 @@
 import 'dart:async';
-
-import 'app_network_screen.dart';
-import 'button_shortcuts_screen.dart';
-import 'camera_ring_screen.dart';
-import 'device_snapshot_screen.dart';
-import 'battery_usage_screen.dart';
-import 'clipboard_shelf_screen.dart';
-import 'edge_actions_screen.dart';
-import '../services/app_shortcut_navigation.dart';
-import 'notification_undo_screen.dart';
-import 'photos_sources_screen.dart';
-import 'root_files_screen.dart';
-
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
-import '../customization/local_customization.dart';
 import '../customization/carrier_selection_dialog.dart';
 import '../customization/customization_health.dart';
-import '../customization/network_indicator_preview.dart';
-import '../customization/saved_setup_sheet.dart';
-import '../customization/text_tone_control.dart';
+import '../customization/local_customization.dart';
 import '../customization/native_liquid_controls.dart';
+import '../customization/saved_setup_sheet.dart';
+import '../customization/settings_controls.dart';
+import '../customization/text_tone_control.dart';
+import '../services/app_shortcut_navigation.dart';
+
+import 'app_network_screen.dart';
+import 'battery_usage_screen.dart';
+import 'button_shortcuts_screen.dart';
+import 'camera_ring_screen.dart';
+import 'clipboard_shelf_screen.dart';
 import 'customization_health_screen.dart';
+import 'device_snapshot_screen.dart';
 import 'devices_screen.dart';
+import 'edge_actions_screen.dart';
+import 'network_speed_screen.dart';
+import 'notification_undo_screen.dart';
+import 'photos_sources_screen.dart';
+import 'root_files_screen.dart';
 import 'settings_screen.dart';
 
 class LocalCustomizationScreen extends StatefulWidget {
@@ -47,24 +47,9 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
   String? _error;
   Timer? _poll;
   Route<void>? _networkSpeedRoute;
-  Timer? _networkHealthRefresh;
-  bool _networkUpdateRunning = false;
-  MapEntry<String, Object>? _pendingNetworkUpdate;
-  static const _liveNetworkKeys = {
-    'textSize',
-    'stackedTextSize',
-    'arrowScale',
-    'indicatorHeight',
-    'rateWidth',
-    'arrowGap',
-    'directionGap',
-    'iconGap',
-    'verticalOffset',
-    'horizontalPosition',
-    'unitGap',
-    'unitScale',
-    'thresholdKB',
-  };
+  Timer? _healthRefreshAfterWrite;
+  bool _liveWriteRunning = false;
+  MapEntry<String, Object>? _pendingLiveSetting;
   Map<String, dynamic> _section(String key) =>
       Map<String, dynamic>.from((_data[key] as Map?) ?? {});
   @override
@@ -92,7 +77,7 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
   @override
   void dispose() {
     _poll?.cancel();
-    _networkHealthRefresh?.cancel();
+    _healthRefreshAfterWrite?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _featureRevision.dispose();
     super.dispose();
@@ -127,7 +112,7 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
       if (mounted &&
           requestId == _requestId &&
           visualRequestId == _visualRequestId &&
-          !_networkUpdateRunning) {
+          !_liveWriteRunning) {
         setState(() => _data = result);
         if (quiet) _featureRevision.value++;
       }
@@ -190,8 +175,8 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
   Future<void> _flushSetupEdits() async {
     final deadline = DateTime.now().add(const Duration(seconds: 15));
     while (_writes > 0 ||
-        _networkUpdateRunning ||
-        _pendingNetworkUpdate != null) {
+        _liveWriteRunning ||
+        _pendingLiveSetting != null) {
       if (DateTime.now().isAfter(deadline)) {
         throw StateError('Settings are still applying. Try saving again.');
       }
@@ -541,28 +526,28 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
 
   // One in-flight write and one latest pending value keep a drag responsive
   // without building a queue of obsolete native settings operations.
-  void _liveNetworkSetting(String key, Object value) {
-    _networkHealthRefresh?.cancel();
+  void _applyLiveSetting(String key, Object value) {
+    _healthRefreshAfterWrite?.cancel();
     _previewSetting(key, value);
     _visualRequestId++; // An older response must not rewind the local thumb.
-    _pendingNetworkUpdate = MapEntry(key, value);
-    if (!_networkUpdateRunning) unawaited(_flushNetworkSettings());
+    _pendingLiveSetting = MapEntry(key, value);
+    if (!_liveWriteRunning) unawaited(_flushLiveSettings());
   }
 
-  Future<void> _flushNetworkSettings() async {
-    _networkUpdateRunning = true;
+  Future<void> _flushLiveSettings() async {
+    _liveWriteRunning = true;
     try {
-      while (_pendingNetworkUpdate != null) {
-        final update = _pendingNetworkUpdate!;
-        _pendingNetworkUpdate = null;
+      while (_pendingLiveSetting != null) {
+        final update = _pendingLiveSetting!;
+        _pendingLiveSetting = null;
         await _apply(update.key, update.value);
       }
     } finally {
-      _networkUpdateRunning = false;
-      _networkHealthRefresh?.cancel();
+      _liveWriteRunning = false;
+      _healthRefreshAfterWrite?.cancel();
       if (mounted) {
-        _networkHealthRefresh = Timer(const Duration(seconds: 1), () {
-          if (mounted && !_networkUpdateRunning) {
+        _healthRefreshAfterWrite = Timer(const Duration(seconds: 1), () {
+          if (mounted && !_liveWriteRunning) {
             unawaited(_run('probe', quiet: true));
           }
         });
@@ -628,29 +613,12 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
           child: ValueListenableBuilder<int>(
             valueListenable: _featureRevision,
             builder: (context, _, _) {
-              final controls = ListView(
+              final child = content(_data);
+              if (networkSpeed) return child;
+              return ListView(
                 padding: const EdgeInsets.all(16),
-                keyboardDismissBehavior:
-                    ScrollViewKeyboardDismissBehavior.onDrag,
-                children: [content(_data)],
-              );
-              if (!networkSpeed) return controls;
-              return Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                    child: NetworkIndicatorPreview(
-                      config: _section('config'),
-                      onPositionChanged: _busy
-                          ? null
-                          : (value) => _liveNetworkSetting(
-                              'horizontalPosition',
-                              value,
-                            ),
-                    ),
-                  ),
-                  Expanded(child: controls),
-                ],
+                keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                children: [child],
               );
             },
           ),
@@ -740,7 +708,13 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
                     icon: Icons.speed,
                     onTap: () => _openFeature(
                       'Network speed',
-                      _networkSpeedFeature,
+                      (report) => NetworkSpeedScreen(
+                        report: report,
+                        busy: _busy,
+                        error: _error,
+                        onEnabledChanged: (value) => _apply('enabled', value),
+                        onSettingChanged: _applyLiveSetting,
+                      ),
                       saveScope: 'network',
                     ),
                   ),
@@ -753,7 +727,7 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
     );
   }
 
-  Widget _tuningSlider({
+  Widget _edgeSlider({
     required String title,
     required String keyName,
     required int min,
@@ -763,37 +737,14 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
   }) {
     final value = ((_section('config')[keyName] as num?)?.toInt() ?? fallback)
         .clamp(min, max);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Expanded(child: Text(title)),
-            Text('$value$suffix'),
-          ],
-        ),
-        Slider(
-          value: value.toDouble(),
-          min: min.toDouble(),
-          max: max.toDouble(),
-          divisions: max - min,
-          label: '$value$suffix',
-          onChanged: _busy
-              ? null
-              : (v) => _liveNetworkKeys.contains(keyName)
-                    ? _liveNetworkSetting(keyName, v.round())
-                    : _previewSetting(keyName, v.round()),
-          onChangeEnd: _busy
-              ? null
-              : (v) {
-                  if (_liveNetworkKeys.contains(keyName)) {
-                    _liveNetworkSetting(keyName, v.round());
-                  } else {
-                    _apply(keyName, v.round());
-                  }
-                },
-        ),
-      ],
+    return CustomizationSlider(
+      title: title,
+      value: value,
+      min: min,
+      max: max,
+      suffix: suffix,
+      onChanged: _busy ? null : (v) => _previewSetting(keyName, v),
+      onChangeEnd: _busy ? null : (v) => _apply(keyName, v),
     );
   }
 
@@ -927,35 +878,6 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
     if (yes == true) await _run('restartSystemUi');
   }
 
-  Widget _card(
-    String title,
-    List<Widget> children, {
-    IconData icon = Icons.info_outline,
-  }) => Card(
-    margin: const EdgeInsets.only(bottom: 16),
-    child: Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  title,
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          ...children,
-        ],
-      ),
-    ),
-  );
   Widget _line(String label, Object? value) => Padding(
     padding: const EdgeInsets.symmetric(vertical: 4),
     child: Row(
@@ -1000,7 +922,7 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
         .where((value) => value.isNotEmpty)
         .length;
     final appRuleCount = _edgeAppRules().length;
-    return _card('Edge panel', [
+    return CustomizationCard('Edge panel', [
       const SizedBox(height: 12),
       SwitchListTile(
         contentPadding: EdgeInsets.zero,
@@ -1074,14 +996,14 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
                 }
               },
       ),
-      _tuningSlider(
+      _edgeSlider(
         title: 'Panel width',
         keyName: 'edgePanelWidth',
         min: 120,
         max: 360,
         fallback: 260,
       ),
-      _tuningSlider(
+      _edgeSlider(
         title: 'Panel height',
         keyName: 'edgePanelHeight',
         min: 240,
@@ -1112,14 +1034,14 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
         value: (config['edgePanelTextTone'] as num?)?.toInt() ?? -1,
         busy: _busy,
         onChanged: (v, transient) =>
-            _liveNetworkSetting('edgePanelTextTone', v),
+            _applyLiveSetting('edgePanelTextTone', v),
       ),
       NativeLiquidControls(
         raw: (config['edgePanelNativeGlass'] as String?) ?? '{}',
         onChanged: (value) =>
-            _liveNetworkSetting('edgePanelNativeGlass', value),
+            _applyLiveSetting('edgePanelNativeGlass', value),
       ),
-      _tuningSlider(
+      _edgeSlider(
         title: 'Vertical position',
         keyName: 'edgePanelPosition',
         min: 5,
@@ -1127,7 +1049,7 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
         fallback: 50,
         suffix: '%',
       ),
-      _tuningSlider(
+      _edgeSlider(
         title: 'Handle height',
         keyName: 'edgeHandleHeight',
         min: 40,
@@ -1136,300 +1058,6 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
       ),
       const SizedBox(height: 8),
     ], icon: Icons.view_sidebar_outlined);
-  }
-
-  Widget _networkOptions(
-    String title,
-    String key,
-    Map<String, String> options,
-  ) {
-    final current = (_section('config')[key] ?? options.keys.first).toString();
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: DropdownButtonFormField<String>(
-        key: ValueKey('$key-$current'),
-        initialValue: current,
-        isExpanded: true,
-        decoration: InputDecoration(
-          labelText: title,
-          border: const OutlineInputBorder(),
-        ),
-        items: options.entries
-            .map(
-              (entry) =>
-                  DropdownMenuItem(value: entry.key, child: Text(entry.value)),
-            )
-            .toList(),
-        onChanged: _busy
-            ? null
-            : (value) {
-                if (value != null) {
-                  _liveNetworkSetting(
-                    key,
-                    key == 'decimals' || key == 'intervalMs'
-                        ? int.parse(value)
-                        : value,
-                  );
-                }
-              },
-      ),
-    );
-  }
-
-  Widget _networkToggle(
-    String title,
-    String key, {
-    bool fallback = false,
-    String? subtitle,
-  }) => SwitchListTile(
-    contentPadding: EdgeInsets.zero,
-    title: Text(title),
-    subtitle: subtitle == null ? null : Text(subtitle),
-    value: (_section('config')[key] as bool?) ?? fallback,
-    onChanged: _busy ? null : (value) => _liveNetworkSetting(key, value),
-  );
-
-  Widget _networkSpeedFeature(Map<String, dynamic> data) {
-    final config = healthSection(data, 'config');
-    final enabled = config['enabled'] == true;
-    final stacked = config['layout'] != 'inline';
-    final requirementsMet = hasSystemUiCapabilities(data);
-    final blocked = !enabled && (data['canEnable'] != true || !requirementsMet);
-    final blocker = (data['blockers'] as List?)
-        ?.whereType<String>()
-        .firstOrNull;
-    return _card('Preferences', [
-      SwitchListTile(
-        contentPadding: EdgeInsets.zero,
-        title: const Text('Show in status bar'),
-        subtitle: Text(
-          blocked
-              ? blocker ?? 'Checking SystemUI and the recovery watchdog…'
-              : indicatorStatus(data),
-        ),
-        value: enabled,
-        onChanged: _busy || blocked
-            ? null
-            : (value) => _apply('enabled', value),
-      ),
-      if (data['hookUpdateRequired'] == true)
-        const Text('Restart System UI once to load the new renderer.'),
-      if (_error != null)
-        Text(
-          _error!,
-          style: TextStyle(color: Theme.of(context).colorScheme.error),
-        ),
-      const Divider(),
-      ExpansionTile(
-        key: const PageStorageKey('network-appearance'),
-        initiallyExpanded: true,
-        tilePadding: EdgeInsets.zero,
-        title: const Text('Appearance'),
-        subtitle: const Text('Design, layout and weight'),
-        children: [
-          Wrap(
-            spacing: 8,
-            runSpacing: 4,
-            children:
-                const {
-                      'plain': 'Classic',
-                      'pill': 'Pill',
-                      'outline': 'Outline',
-                      'mono': 'Monospace',
-                      'glass': 'Glass',
-                      'box': 'Box',
-                      'split': 'Split',
-                      'badge': 'Badge',
-                    }.entries
-                    .map(
-                      (entry) => ChoiceChip(
-                        label: Text(entry.value),
-                        selected:
-                            (config['indicatorDesign'] ?? 'plain') == entry.key,
-                        onSelected: _busy
-                            ? null
-                            : (_) => _liveNetworkSetting(
-                                'indicatorDesign',
-                                entry.key,
-                              ),
-                      ),
-                    )
-                    .toList(),
-          ),
-          _networkOptions('Layout', 'layout', const {
-            'stacked': 'Value above unit',
-            'inline': 'Value beside unit',
-          }),
-          _networkToggle('Bold values', 'boldValue'),
-          _networkToggle('Bold labels and arrows', 'boldText'),
-        ],
-      ),
-      ExpansionTile(
-        key: const PageStorageKey('network-units'),
-        tilePadding: EdgeInsets.zero,
-        title: const Text('Text and units'),
-        subtitle: const Text('Labels, precision and spacing'),
-        children: [
-          _networkOptions('Measure', 'units', const {
-            'bytes': 'Bytes per second',
-            'bits': 'Bits per second',
-          }),
-          _networkOptions('Unit label', 'unitLabel', const {
-            'full': 'Full · KB/s',
-            'unit': 'Without /s · KB',
-            'prefix': 'Prefix only · K',
-            'none': 'Hidden · value only',
-            'custom': 'Custom suffix',
-          }),
-          if (config['unitLabel'] == 'custom')
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: TextFormField(
-                key: const ValueKey('network-unit-suffix'),
-                initialValue: config['unitSuffix'] as String? ?? 'B/s',
-                maxLength: 12,
-                decoration: const InputDecoration(
-                  labelText: 'Suffix after K, M or G',
-                  hintText: 'B/s',
-                  helperText: 'Example: B gives KB, MB or GB.',
-                  border: OutlineInputBorder(),
-                ),
-                onChanged: (value) => _liveNetworkSetting('unitSuffix', value),
-              ),
-            ),
-          _networkOptions('Decimal places', 'decimals', const {
-            '0': '0',
-            '1': '1',
-            '2': '2',
-          }),
-          if (config['unitLabel'] != 'none') ...[
-            _tuningSlider(
-              title: 'Value / unit gap',
-              keyName: 'unitGap',
-              min: -4,
-              max: 8,
-              fallback: 1,
-            ),
-            const Text(
-              'Negative values tighten spacing; a minimum clearance keeps characters readable.',
-            ),
-            _tuningSlider(
-              title: 'Unit size',
-              keyName: 'unitScale',
-              min: 50,
-              max: 120,
-              fallback: 100,
-              suffix: '%',
-            ),
-          ],
-        ],
-      ),
-      ExpansionTile(
-        key: const PageStorageKey('network-layout'),
-        tilePadding: EdgeInsets.zero,
-        title: const Text('Position and sizing'),
-        subtitle: const Text('Drag the preview; sizes fit available space'),
-        children: [
-          _networkOptions('Restore an anchored position', 'position', const {
-            'left': 'After clock',
-            'right': 'Before system icons',
-          }),
-          _tuningSlider(
-            title: stacked ? 'Maximum two-line size' : 'Maximum one-line size',
-            keyName: stacked ? 'stackedTextSize' : 'textSize',
-            min: stacked ? 4 : 8,
-            max: stacked ? 12 : 18,
-            fallback: stacked ? 8 : 10,
-            suffix: ' sp',
-          ),
-          _tuningSlider(
-            title: 'Indicator height',
-            keyName: 'indicatorHeight',
-            min: 13,
-            max: 20,
-            fallback: 16,
-          ),
-          _tuningSlider(
-            title: 'Rate column width',
-            keyName: 'rateWidth',
-            min: 26,
-            max: 64,
-            fallback: 38,
-          ),
-          _tuningSlider(
-            title: 'Vertical offset',
-            keyName: 'verticalOffset',
-            min: -3,
-            max: 3,
-            fallback: 0,
-          ),
-          _tuningSlider(
-            title: 'Outer padding',
-            keyName: 'iconGap',
-            min: 0,
-            max: 12,
-            fallback: 6,
-          ),
-          if (config['showUpload'] != false)
-            _tuningSlider(
-              title: 'Download / upload gap',
-              keyName: 'directionGap',
-              min: 0,
-              max: 12,
-              fallback: 6,
-            ),
-          if (config['showArrows'] != false) ...[
-            _tuningSlider(
-              title: 'Arrow size',
-              keyName: 'arrowScale',
-              min: 60,
-              max: 200,
-              fallback: 140,
-              suffix: '%',
-            ),
-            _tuningSlider(
-              title: 'Arrow / value gap',
-              keyName: 'arrowGap',
-              min: -3,
-              max: 6,
-              fallback: 0,
-            ),
-          ],
-          const Text(
-            'Maximum text sizes shrink automatically when the status bar has less room. Each layout remembers its size.',
-          ),
-        ],
-      ),
-      ExpansionTile(
-        key: const PageStorageKey('network-traffic'),
-        tilePadding: EdgeInsets.zero,
-        title: const Text('Traffic and visibility'),
-        subtitle: const Text('Directions, idle behavior and update rate'),
-        children: [
-          _networkToggle('Show upload speed', 'showUpload', fallback: true),
-          _networkToggle('Direction arrows', 'showArrows', fallback: true),
-          _networkToggle('Hide when idle', 'hideIdle', fallback: true),
-          if (config['hideIdle'] != false)
-            _tuningSlider(
-              title: 'Idle threshold',
-              keyName: 'thresholdKB',
-              min: 0,
-              max: 1024,
-              fallback: 1,
-              suffix: ' KB/s',
-            ),
-          _networkOptions('Traffic update interval', 'intervalMs', const {
-            '500': '0.5 seconds',
-            '1000': '1 second',
-            '2000': '2 seconds',
-            '5000': '5 seconds',
-          }),
-          const Text(
-            'Appearance and position apply immediately, independently of the traffic update interval. Fullscreen apps can hide the status bar.',
-          ),
-        ],
-      ),
-    ], icon: Icons.speed);
   }
 
   String _carrierSummary(Map<String, dynamic> carrier) =>
@@ -1443,7 +1071,7 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
 
   Widget _carrierFeature(Map<String, dynamic> data) {
     final carrier = healthSection(data, 'carrier');
-    return _card('Carrier profile override', [
+    return CustomizationCard('Carrier profile override', [
       Text(
         carrier['active'] == true
             ? 'Active'
@@ -1658,7 +1286,7 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
         ? 5
         : 6;
 
-    return _card('Guided setup', [
+    return CustomizationCard('Guided setup', [
       Text(
         firstIncomplete == 6
             ? data['supported'] == true
@@ -1818,7 +1446,7 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
     }
     return Column(
       children: [
-        _card('Backends', [
+        CustomizationCard('Backends', [
           _line(
             'Vector manager',
             vectorInstalled ? 'Installed' : 'Not installed',
@@ -1907,7 +1535,7 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
               'Disabled by KernelSU or the user. Enable it in KernelSU when ready.',
             ),
         ], icon: Icons.extension_outlined),
-        _card('Recovery', [
+        CustomizationCard('Recovery', [
           const Text(
             'Crash-loop protection and framework safe mode remain active. Restoring settings keeps the feature off until you enable it.',
           ),

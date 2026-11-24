@@ -80,8 +80,8 @@ Use scripts/build_tsnet.ps1 after editing native/tsnet/bridge. Inspect native/ts
 ## Narrow checks when authorized
 
 ```powershell
-flutter analyze --no-pub lib/screens/local_customization_screen.dart lib/customization/network_indicator_preview.dart
-flutter test --no-pub test/network_indicator_preview_test.dart
+flutter analyze --no-pub lib/screens/network_speed_screen.dart lib/screens/local_customization_screen.dart lib/customization/network_indicator_preview.dart
+flutter test --no-pub test/network_speed_screen_test.dart test/network_indicator_preview_test.dart test/saved_device_setups_test.dart
 ```
 
 Native tests: from android/, run :customization:testDebugUnitTest with --tests naming the relevant class. Apply the JAVA_HOME/JVM limits above. Do not claim phone graphics are validated by a successful unit test.

@@ -1,70 +1,17 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:remote_control/customization/customization_health.dart';
-import 'package:remote_control/customization/network_indicator_preview.dart';
 import 'package:remote_control/customization/local_customization.dart';
 import 'package:remote_control/screens/local_customization_screen.dart';
 
-import 'dart:convert';
-
-Map<String, dynamic> healthy() => {
-  'device': 'Pixel 10',
-  'android': '17',
-  'sdk': 37,
-  'supported': true,
-  'canEnable': true,
-  'safetyLeaseRemainingMs': 85000,
-  'capabilities': [
-    'device.validatedSystemUi',
-    'xposed.remoteConfiguration',
-    'xposed.systemuiHook',
-    'root.recoveryWatchdog',
-  ],
-  'config': {
-    'enabled': true,
-    'revision': 4,
-    'hideIdle': false,
-    'showUpload': true,
-    'showArrows': false,
-    'layout': 'stacked',
-    'units': 'bytes',
-    'decimals': 1,
-    'textSize': 12,
-    'intervalMs': 1000,
-  },
-  'hook': {
-    'fresh': true,
-    'state': 'active',
-    'version': '2',
-    'pid': 42,
-    'revision': 4,
-    'ageMs': 500,
-    'metrics': {
-      'attached': true,
-      'visible': true,
-      'visibilityReason': 'showing',
-      'sampleAgeMs': 20,
-    },
-  },
-  'root': {
-    'authorized': true,
-    'moduleState': 'healthy',
-    'systemUiRestarts': '0',
-    'watchdogAgeSeconds': 2,
-  },
-  'xposed': {
-    'connected': true,
-    'name': 'Vector',
-    'api': 102,
-    'scope': ['com.android.systemui'],
-  },
-};
+import 'fixtures/customization_report.dart';
 
 void main() {
   test('panel and indicator require every SystemUI capability', () {
-    final required = healthy()['capabilities'] as List;
-    expect(hasSystemUiCapabilities(healthy()), isTrue);
+    final required = healthyCustomizationReport()['capabilities'] as List;
+    expect(hasSystemUiCapabilities(healthyCustomizationReport()), isTrue);
     expect(hasSystemUiCapabilities({}), isFalse);
     for (final missing in required) {
       final available = required.where((id) => id != missing).toList();
@@ -74,7 +21,7 @@ void main() {
   });
 
   test('an intentional user disable is not presented as a crash recovery', () {
-    final data = healthy();
+    final data = healthyCustomizationReport();
     (data['config'] as Map).addAll(<String, Object>{
       'enabled': false,
       'emergencyDisabled': true,
@@ -85,7 +32,7 @@ void main() {
     expect(customizationChecks(data).where((c) => c.attention), isEmpty);
   });
   test('normal fullscreen hiding is explained without raising a failure', () {
-    final data = healthy();
+    final data = healthyCustomizationReport();
     (data['hook']['metrics'] as Map)['visibilityReason'] = 'statusBarHidden';
     (data['hook']['metrics'] as Map)['visible'] = false;
     expect(indicatorStatus(data), 'Status bar hidden by Android');
@@ -94,7 +41,7 @@ void main() {
   test(
     'a live hook bridge keeps customization healthy without manager service',
     () {
-      final data = healthy();
+      final data = healthyCustomizationReport();
       data['xposed'] = {'connected': false, 'scope': <String>[]};
       final framework = customizationChecks(data)
           .firstWhere((check) => check.title == 'Framework');
@@ -103,7 +50,7 @@ void main() {
     },
   );
   test('blocked loaded hook is detected without granting compatibility', () {
-    final data = healthy();
+    final data = healthyCustomizationReport();
     data['supported'] = false;
     data['canEnable'] = false;
     data['capabilities'] = <String>[];
@@ -135,7 +82,7 @@ void main() {
   testWidgets('setup separates module presence from blocked firmware', (
     tester,
   ) async {
-    final data = healthy();
+    final data = healthyCustomizationReport();
     data['vector'] = {'installed': true};
     data['kernelsu'] = {'installed': true};
     data['supported'] = false;
@@ -179,7 +126,7 @@ void main() {
   test(
     'detects clipping, expired safety coverage and delayed visible samples',
     () {
-      final data = healthy();
+      final data = healthyCustomizationReport();
       data['safetyLeaseRemainingMs'] = 0;
       (data['hook']['metrics'] as Map).addAll(<String, Object>{
         'textClipped': true,
@@ -197,7 +144,7 @@ void main() {
   test(
     'distinguishes carrier installation, database and active mount health',
     () {
-      final data = healthy();
+      final data = healthyCustomizationReport();
       data['carrier'] = {
         'installed': true,
         'moduleState': 'enabled',
@@ -215,7 +162,7 @@ void main() {
     },
   );
   test('disabled portable backend waits for generation without a false database alarm', () {
-    final data = healthy();
+    final data = healthyCustomizationReport();
     data['carrier'] = <String, dynamic>{
       'installed': true,
       'moduleState': 'disabled',
@@ -233,7 +180,7 @@ void main() {
     );
   });
   test('portable backend rejects an incompatible vendor database', () {
-    final data = healthy();
+    final data = healthyCustomizationReport();
     data['carrier'] = <String, dynamic>{
       'installed': true,
       'moduleState': 'enabled',
@@ -254,168 +201,4 @@ void main() {
       true,
     );
   });
-  testWidgets('Network speed recovers while its page is visible', (
-    tester,
-  ) async {
-    final data = healthy();
-    final config = data['config'] as Map;
-    final hook = data['hook'] as Map;
-    config['enabled'] = false;
-    hook['fresh'] = false;
-    data['canEnable'] = false;
-    data['blockers'] = ['Waiting for a fresh SystemUI report'];
-    final capabilities = data['capabilities'] as List;
-    capabilities.remove('xposed.systemuiHook');
-    data['xposed'] = {'connected': false};
-
-    final messenger =
-        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
-    var applyCalls = 0;
-    messenger.setMockMethodCallHandler(LocalCustomization.channel, (
-      call,
-    ) async {
-      if (call.method == 'apply') {
-        applyCalls++;
-        expect(
-          jsonDecode((call.arguments as Map)['config'] as String)['enabled'],
-          true,
-        );
-        if (applyCalls == 1) {
-          throw PlatformException(
-            code: 'CUSTOMIZATION_FAILED',
-            message: 'Root access denied',
-          );
-        }
-        config['enabled'] = true;
-      }
-      return jsonEncode(data);
-    });
-    addTearDown(
-      () =>
-          messenger.setMockMethodCallHandler(LocalCustomization.channel, null),
-    );
-
-    await tester.pumpWidget(
-      const MaterialApp(home: LocalCustomizationScreen()),
-    );
-    await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('UI features'));
-    await tester.tap(find.text('UI features'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Network speed'));
-    await tester.pumpAndSettle();
-
-    final tile = find.widgetWithText(SwitchListTile, 'Show in status bar');
-    expect(tester.widget<SwitchListTile>(tile).onChanged, isNull);
-    expect(find.text('Waiting for a fresh SystemUI report'), findsOneWidget);
-
-    hook['fresh'] = true;
-    hook['state'] = 'disabled';
-    data['canEnable'] = true;
-    data['blockers'] = <String>[];
-    capabilities.add('xposed.systemuiHook');
-    await tester.pump(const Duration(seconds: 11));
-    await tester.pumpAndSettle();
-
-    expect(tester.widget<SwitchListTile>(tile).onChanged, isNotNull);
-    await tester.tap(tile);
-    await tester.pumpAndSettle();
-    expect(tester.widget<SwitchListTile>(tile).value, isFalse);
-    expect(find.textContaining('Root access denied'), findsOneWidget);
-
-    await tester.tap(tile);
-    await tester.pumpAndSettle();
-    expect(tester.widget<SwitchListTile>(tile).value, isTrue);
-    expect(applyCalls, 2);
-    await tester.pumpWidget(const SizedBox.shrink());
-  });
-
-  testWidgets('preview removes upload and stays usable at narrow widths', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(320, 800);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    final config = Map<String, dynamic>.from(healthy()['config']);
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: Padding(
-            padding: const EdgeInsets.all(24),
-            child: NetworkIndicatorPreview(config: config),
-          ),
-        ),
-      ),
-    );
-    expect(find.text('3.2'), findsOneWidget);
-    config['showUpload'] = false;
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: Padding(
-            padding: const EdgeInsets.all(24),
-            child: NetworkIndicatorPreview(config: config),
-          ),
-        ),
-      ),
-    );
-    expect(find.text('3.2'), findsNothing);
-    expect(find.text('24.8'), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
-  testWidgets(
-    'upload toggle preserves idle preference and health opens as a dedicated screen',
-    (tester) async {
-      final data = healthy();
-      Map<String, dynamic>? applied;
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(LocalCustomization.channel, (
-            MethodCall call,
-          ) async {
-            if (call.method == 'applyVisual') {
-              applied = Map<String, dynamic>.from(
-                jsonDecode((call.arguments as Map)['config'] as String) as Map,
-              );
-              data['config'] = applied!;
-            }
-            return jsonEncode(data);
-          });
-      addTearDown(
-        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-            .setMockMethodCallHandler(LocalCustomization.channel, null),
-      );
-      await tester.pumpWidget(
-        const MaterialApp(home: LocalCustomizationScreen()),
-      );
-      await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('UI features'));
-      await tester.tap(find.text('UI features'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Network speed'));
-      await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('Traffic and visibility'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Traffic and visibility'));
-      await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('Show upload speed'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Show upload speed'));
-      await tester.pumpAndSettle();
-      expect(applied?['showUpload'], false);
-      expect(applied?['hideIdle'], false);
-      await tester.pageBack();
-      await tester.pumpAndSettle();
-      await tester.pageBack();
-      await tester.pumpAndSettle();
-      await tester.scrollUntilVisible(find.text('Customization health'), 300);
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Customization health'));
-      await tester.pumpAndSettle();
-      expect(find.text('Health checks'), findsOneWidget);
-      expect(find.text('Checks passing'), findsOneWidget);
-      expect(tester.takeException(), isNull);
-      await tester.pumpWidget(const SizedBox());
-    },
-  );
 }
