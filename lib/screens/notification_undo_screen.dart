@@ -69,7 +69,7 @@ class _NotificationUndoScreenState extends State<NotificationUndoScreen> with Wi
           const Text('Post a sample, swipe and Undo it, then try its original tap or Reply. Undo should leave the app dismissal count unchanged; expiry should increase it.'),
           const SizedBox(height: 12),
           if (_state['notificationsAllowed'] == false) ...[
-            const Text('Allow Node Cockpit notifications to post the sample. Undo on other apps is independent of this permission.'),
+            const Text('Allow Wirehelm notifications to post the sample. Undo on other apps is independent of this permission.'),
             TextButton(onPressed: _working ? null : () => _call('requestSampleNotificationPermission'), child: const Text('Allow sample notifications')),
             TextButton(onPressed: _working ? null : () => _call('openSampleNotificationSettings'), child: const Text('Open notification settings')),
           ],

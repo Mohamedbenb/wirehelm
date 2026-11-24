@@ -82,8 +82,9 @@ class _AppNetworkScreenState extends State<AppNetworkScreen>
         });
       }
     } on PlatformException catch (error) {
-      if (mounted)
+      if (mounted) {
         setState(() => _error = error.message ?? 'Firewall unavailable');
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }

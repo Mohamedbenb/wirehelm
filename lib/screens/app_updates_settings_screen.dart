@@ -105,7 +105,7 @@ class _AppUpdatesSettingsScreenState extends State<AppUpdatesSettingsScreen> {
         padding: const EdgeInsets.all(20),
         children: [
           const Text(
-            'Choose the device that stores the Node Cockpit APK. Your source and APK path are remembered. The app connects through LAN or Tailscale as needed.',
+            'Choose the device that stores the Wirehelm APK. Your source and APK path are remembered. The app connects through LAN or Tailscale as needed.',
           ),
           const SizedBox(height: 20),
           if (_installed != null) Text('Installed: $_installed'),

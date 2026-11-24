@@ -24,7 +24,7 @@ public final class LocalCustomization {
     public static final String CARRIER_MODULE = "/data/adb/modules/tn_5g_cfgdb_wildcard";
     private static final String CARRIER_ASSET = "node-cockpit-carrier";
     private static volatile XposedService framework;
-    private static volatile String frameworkError = "Not connected: enable Node Cockpit in the Xposed manager";
+    private static volatile String frameworkError = "Not connected: enable Wirehelm in the Xposed manager";
     private static Context app;
     private static boolean initialized;
     private static volatile JSONObject rootHealth = new JSONObject();
@@ -470,7 +470,7 @@ public final class LocalCustomization {
             } catch (IOException ignored) {}
         });
         reader.setDaemon(true); reader.start();
-        if (!process.waitFor(30, TimeUnit.SECONDS)) { process.destroyForcibly(); throw new IOException("Root request timed out; approve Node Cockpit in KernelSU"); }
+        if (!process.waitFor(30, TimeUnit.SECONDS)) { process.destroyForcibly(); throw new IOException("Root request timed out; approve Wirehelm in KernelSU"); }
         reader.join(1500);
         String result = output.toString("UTF-8").trim();
         if (process.exitValue() != 0) throw new IOException(result.isEmpty() ? "Root access denied" : result);

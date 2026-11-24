@@ -14,7 +14,7 @@ final class NotificationUndoSamples {
     static JSONObject state(Context c)throws Exception{return new JSONObject().put("posts",prefs(c).getInt("posts",0)).put("replies",prefs(c).getInt("replies",0)).put("deletes",prefs(c).getInt("deletes",0));}
     static void post(Context c){
         NotificationManager manager=c.getSystemService(NotificationManager.class);
-        if(!manager.areNotificationsEnabled())throw new IllegalStateException("Allow Node Cockpit notifications before posting the sample");
+        if(!manager.areNotificationsEnabled())throw new IllegalStateException("Allow Wirehelm notifications before posting the sample");
         prefs(c).edit().putInt("posts",prefs(c).getInt("posts",0)+1).apply();show(c,"Swipe away, tap Undo, then try tapping the card or replying.");
     }
     private static PendingIntent action(Context c,String action,int code,int flags){return PendingIntent.getBroadcast(c,code,new Intent(c,NotificationUndoSampleReceiver.class).setAction(action),PendingIntent.FLAG_UPDATE_CURRENT|flags);}

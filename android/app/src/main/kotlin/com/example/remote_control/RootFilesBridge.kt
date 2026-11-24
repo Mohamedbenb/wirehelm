@@ -105,9 +105,9 @@ class RootFilesBridge(private val context: Context, messenger: BinaryMessenger) 
                     out.write(buffer, 0, n)
                 }
             }
-            check(process.waitFor() == 0) { "Root operation failed or timed out. Grant root access to Node Cockpit and retry." }
+            check(process.waitFor() == 0) { "Root operation failed or timed out. Grant root access to Wirehelm and retry." }
             val line = out.toString("UTF-8").lineSequence().lastOrNull { it.startsWith("{") }
-                ?: error("Root helper unavailable. Grant root access to Node Cockpit and retry.")
+                ?: error("Root helper unavailable. Grant root access to Wirehelm and retry.")
             val value = JSONObject(line)
             if (value.has("error")) error(value.getString("error"))
             return value

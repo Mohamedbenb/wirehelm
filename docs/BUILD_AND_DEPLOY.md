@@ -29,7 +29,20 @@ From the project root:
 
 The script packages customization backend assets, builds an ARM64 release, verifies Xposed metadata, and publishes the downloader alias plus version sidecars. See [remote updates](REMOTE_UPDATES.md) for the phone workflow.
 
-## Known working direct Gradle build on this PC
+## Direct Gradle build
+
+### CachyOS
+
+With the Android SDK, JDK and Flutter configured and the native dependencies already built, run from the repository root:
+
+```sh
+sh android/gradlew -p android --max-workers=1 -Ptarget-platform=android-arm64 :app:assembleRelease
+python3 scripts/verify_customization_apk.py build/app/outputs/apk/release/app-release.apk
+```
+
+The installed Gradle version matching the wrapper can also run these tasks. Specifying ARM64 selects the Flutter engine for the Pixel. A direct build leaves updater publication as a separate step.
+
+### Windows
 
 Use this when only Flutter/Java/Kotlin changed and existing backend assets/native libraries are current:
 

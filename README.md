@@ -4,7 +4,7 @@ Wirehelm combines SSH and remote device tools with optional customization for ro
 
 ## Features
 
-- SSH terminal, SFTP file transfers, saved commands, and remote desktop tools.
+- SSH terminal, SFTP file transfers, saved commands, and remote desktop tools. For KDE keyboard access, Pi-assisted wake and display controls, see the [CachyOS desktop guide](docs/CACHYOS_DESKTOP.md).
 - [Remote downloads](docs/REMOTE_DOWNLOADS.md) save URLs on a connected computer with persistent progress, pause/resume, and optional SHA-256 verification.
 - [Rooted OTA preparation](docs/OTA_PREPARATION.md) patches each full OTA with KernelSU and signs/verifies a new ZIP on the computer using existing keys.
 - An embedded Tailscale client and an authenticated, temporary [Remote ADB relay](docs/REMOTE_ADB.md).

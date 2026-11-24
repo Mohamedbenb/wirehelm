@@ -25,7 +25,7 @@ void main() {
       call,
     ) async {
       if (call.method == 'launcherApps') {
-        expect(call.arguments, {'includeSelf': true});
+        expect(call.arguments, {'includeSelf': true, 'edgeShortcuts': true});
         return jsonEncode({
           'apps': [
             {'package': browser, 'label': 'Browser'},

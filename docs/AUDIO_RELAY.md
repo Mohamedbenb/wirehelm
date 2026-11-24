@@ -1,6 +1,6 @@
 # PC audio to Pi
 
-Open a connected PC or Pi in Node Cockpit and choose **Audio relay**. Select the Pi's output and press **Start relay**. Pair/connect headphones using **Pi Bluetooth devices** first if they do not appear in the output list. The Windows PC captures its default playback output, including ordinary application audio. Protected content or applications using exclusive audio paths may not be captured.
+Open a connected PC or Pi in Wirehelm and choose **Audio relay**. Select the Pi's output and press **Start relay**. Pair/connect headphones using **Pi Bluetooth devices** first if they do not appear in the output list. The Windows PC captures its default playback output, including ordinary application audio. Protected content or applications using exclusive audio paths may not be captured.
 
 Audio travels directly from Windows to the Pi inside SSH. The phone configures and monitors it; it does not carry audio. Leaving the screen or closing the app keeps playback running. Use **Stop relay** to stop it. A session has a six-hour limit. PC shutdown, lost playback output, or sustained connection failure also stops playback. Start again after PC sleep or a failed session.
 

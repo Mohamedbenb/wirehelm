@@ -1,6 +1,16 @@
 Map<String, dynamic> healthSection(Map<String, dynamic> data, String key) =>
     Map<String, dynamic>.from((data[key] as Map?) ?? {});
 
+bool hasSystemUiCapabilities(Map<String, dynamic> report) {
+  final available = report['capabilities'] as List? ?? const [];
+  return const [
+    'xposed.systemuiHook',
+    'xposed.remoteConfiguration',
+    'root.recoveryWatchdog',
+    'device.validatedSystemUi',
+  ].every(available.contains);
+}
+
 // A blocked hook can still prove the module loaded. This does not grant capabilities.
 bool systemUiHookDetected(Map<String, dynamic> hook) =>
     hook['fresh'] == true || hook['currentProcess'] == true;

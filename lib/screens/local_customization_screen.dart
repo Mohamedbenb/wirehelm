@@ -18,7 +18,6 @@ import 'package:flutter/material.dart';
 
 import '../customization/local_customization.dart';
 import '../customization/carrier_selection_dialog.dart';
-import '../customization/feature_registry.dart';
 import '../customization/customization_health.dart';
 import '../customization/network_indicator_preview.dart';
 import '../customization/saved_setup_sheet.dart';
@@ -995,9 +994,7 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
     final config = healthSection(data, 'config');
     final enabled = config['edgePanelEnabled'] == true;
     final panelSide = config['edgePanelSide'] as String? ?? 'right';
-    final requirementsMet = edgePanelFeature.requirement.satisfied(
-      ((data['capabilities'] as List?) ?? []).cast<String>().toSet(),
-    );
+    final requirementsMet = hasSystemUiCapabilities(data);
     final quickApps = ((config['edgePanelApps'] as String?) ?? '')
         .split(',')
         .where((value) => value.isNotEmpty)
@@ -1196,9 +1193,7 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
     final config = healthSection(data, 'config');
     final enabled = config['enabled'] == true;
     final stacked = config['layout'] != 'inline';
-    final requirementsMet = networkSpeedFeature.requirement.satisfied(
-      ((data['capabilities'] as List?) ?? []).cast<String>().toSet(),
-    );
+    final requirementsMet = hasSystemUiCapabilities(data);
     final blocked = !enabled && (data['canEnable'] != true || !requirementsMet);
     final blocker = (data['blockers'] as List?)
         ?.whereType<String>()
@@ -1954,7 +1949,7 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
     final colors = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Node Cockpit'),
+        title: const Text('Wirehelm'),
         actions: [
           _setupMenu(),
           IconButton(

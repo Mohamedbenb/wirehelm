@@ -19,7 +19,7 @@ void main() {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(LocalCustomization.channel, (call) async {
             calls.add(call);
-            if (call.method == 'saveSetup')
+            if (call.method == 'saveSetup') {
               data['savedSetups'] = [
                 {
                   'id': 'known-id',
@@ -27,6 +27,7 @@ void main() {
                   'at': 1792800000000,
                 },
               ];
+            }
             return jsonEncode(data);
           });
       addTearDown(

@@ -189,8 +189,8 @@ class _AppUpdateScreenState extends State<AppUpdateScreen> {
       if (mounted) {
         setState(() {
           _message = result == 'permission_required'
-              ? 'Allow Node Cockpit to install apps, return here, then tap Install update again.'
-              : 'Confirm the update in Android’s installer. Reopen Node Cockpit after installation.';
+              ? 'Allow Wirehelm to install apps, return here, then tap Install update again.'
+              : 'Confirm the update in Android’s installer. Reopen Wirehelm after installation.';
         });
       }
     } catch (e) {
@@ -219,7 +219,7 @@ class _AppUpdateScreenState extends State<AppUpdateScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Update Node Cockpit')),
+    appBar: AppBar(title: const Text('Update Wirehelm')),
     body: SafeArea(
       child: ListView(
         padding: const EdgeInsets.all(20),

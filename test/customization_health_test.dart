@@ -62,6 +62,17 @@ Map<String, dynamic> healthy() => {
 };
 
 void main() {
+  test('panel and indicator require every SystemUI capability', () {
+    final required = healthy()['capabilities'] as List;
+    expect(hasSystemUiCapabilities(healthy()), isTrue);
+    expect(hasSystemUiCapabilities({}), isFalse);
+    for (final missing in required) {
+      final available = required.where((id) => id != missing).toList();
+      expect(hasSystemUiCapabilities({'capabilities': available}), isFalse,
+          reason: 'Missing $missing');
+    }
+  });
+
   test('an intentional user disable is not presented as a crash recovery', () {
     final data = healthy();
     (data['config'] as Map).addAll(<String, Object>{

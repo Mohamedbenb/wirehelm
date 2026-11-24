@@ -148,7 +148,7 @@ class SshSession extends ChangeNotifier {
       return await host.run(cacheWindowsTypes(script), timeout, label: label);
     } on WindowsHostStartException catch (error) {
       debugPrint(
-        'Node Cockpit Windows ${desktop ? 'desktop' : 'SSH'} helper startup: $error',
+        'Wirehelm Windows ${desktop ? 'desktop' : 'SSH'} helper startup: $error',
       );
       _helperRetryAt = DateTime.now().add(const Duration(seconds: 30));
       // Startup failed before submitting anything: legacy execution is safe.

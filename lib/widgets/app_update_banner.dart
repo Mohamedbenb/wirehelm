@@ -133,7 +133,7 @@ class _AppUpdateBannerState extends State<AppUpdateBanner>
       ? const SizedBox.shrink()
       : MaterialBanner(
           leading: const Icon(Icons.system_update),
-          content: Text('Node Cockpit $_available is available.'),
+          content: Text('Wirehelm $_available is available.'),
           actions: [
             TextButton(
               onPressed: () {

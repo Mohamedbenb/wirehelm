@@ -1,6 +1,6 @@
 # Root file explorer
 
-Current implementation: Node Cockpit 1.37.61 / build 267. Open the phone dashboard → Root file explorer. This feature uses root directly and is independent of Vector, SystemUI hooks and paused glass work. No SystemUI restart is needed for explorer updates.
+Open **Root file explorer** from the phone dashboard. The explorer uses root directly and works independently of Vector and the SystemUI hook. See the [handoff](CODEX_HANDOFF.md) for the installed build.
 
 ## Navigation and presentation
 

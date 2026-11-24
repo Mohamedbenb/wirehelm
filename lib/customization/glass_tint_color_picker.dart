@@ -160,13 +160,14 @@ class _GlassTintPickerState extends State<_GlassTintPicker> {
                   ),
                   onChanged: (v) {
                     setState(() {
-                      if (valid)
+                      if (valid) {
                         hsv = HSVColor.fromColor(
                           Color(
                             0xff000000 |
                                 int.parse(v.replaceFirst('#', ''), radix: 16),
                           ),
                         );
+                      }
                     });
                   },
                 ),

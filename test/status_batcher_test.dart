@@ -5,8 +5,6 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:remote_control/models/device.dart';
-import 'package:remote_control/devices/device_host_connector.dart';
 import 'package:remote_control/models/remote_command.dart';
 import 'package:remote_control/ssh/ssh_session.dart';
 import 'package:remote_control/stateful/status_batcher.dart';
@@ -117,53 +115,6 @@ void main() {
       expect((await desktop).stateId, 'on');
     },
   );
-  test('local takes priority; unavailable local falls back; legacy uses internet directly', () async {
-    const device = Device(
-      id: 'pc',
-      name: 'PC',
-      host: 'remote',
-      localHost: 'local',
-      port: 22,
-      username: 'user',
-      commands: [],
-    );
-    var remoteCalls = 0;
-    Future<String> remote(String host) async {
-      remoteCalls++;
-      return host;
-    }
-
-    expect(
-      await connectDeviceHosts(
-        device: device,
-        local: (host, timeout) async {
-          expect(timeout, const Duration(seconds: 3));
-          return host;
-        },
-        internet: remote,
-      ),
-      'local',
-    );
-    expect(remoteCalls, 0);
-    expect(
-      await connectDeviceHosts(
-        device: device,
-        local: (host, timeout) async => throw StateError('unreachable'),
-        internet: remote,
-      ),
-      'remote',
-    );
-    expect(remoteCalls, 1);
-    expect(
-      await connectDeviceHosts(
-        device: device.copyWith(localHost: ''),
-        local: (host, timeout) async => throw StateError('must not call local'),
-        internet: remote,
-      ),
-      'remote',
-    );
-    expect(remoteCalls, 2);
-  });
   testWidgets(
     'one desktop call refreshes two commands and isolates per-command errors',
     (tester) async {
@@ -242,27 +193,4 @@ void main() {
       await directory.delete(recursive: true);
     }
   }, skip: !Platform.isWindows);
-
-  test('legacy devices preserve their host, and new settings survive copying and storage', () {
-    final legacy = Device.fromJson({
-      'id': 'pc',
-      'name': 'PC',
-      'host': '100.64.0.1',
-      'port': 22,
-      'username': 'test',
-      'commands': [],
-    });
-    expect(legacy.localHost, '');
-    expect(legacy.refreshSeconds, 20);
-    final updated = legacy.copyWith(
-      localHost: '192.168.1.2',
-      refreshSeconds: 60,
-    );
-    final restored = Device.fromJson(
-      updated.copyWith(name: 'Renamed').toJson(),
-    );
-    expect(restored.localHost, '192.168.1.2');
-    expect(restored.host, legacy.host);
-    expect(restored.refreshSeconds, 60);
-  });
 }

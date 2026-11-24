@@ -15,8 +15,9 @@ void mockPanelActions() {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
   var raw = '{}';
   messenger.setMockMethodCallHandler(LocalCustomization.channel, (call) async {
-    if (call.method == 'saveEdgeActions')
+    if (call.method == 'saveEdgeActions') {
       raw = (call.arguments as Map)['raw'] as String;
+    }
     return jsonEncode({'raw': raw});
   });
   addTearDown(
