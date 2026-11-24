@@ -6,10 +6,11 @@ Wirehelm **1.38.30 (336)** was installed in place on the Pixel 10 over Remote AD
 
 Build 336 accepts a fresh SystemUI report as evidence of the hook. The network speed switch shows its first blocker and waits for the safety check before changing state. At installation, SystemUI was running hook 204 on PID 20609, settings revisions matched at 5961, and the Edge panel reported zero errors. The network indicator was off in saved settings. Eighteen focused Flutter tests and 187 Android customization tests passed for that release. [Settings delivery](BEHAVIOR_GUIDE.md#2-settings-accepted-delivered-drawn-and-reported)
 
-## Awaiting hands-on checks
+## Hands-on checks
 
-- Enable network speed and confirm the readout appears in the status bar.
-- In Edge controls, check the keyboard placeholder, reuse of an SSH connection across controls, and the Unlock PC authentication prompt. [Edge controls](EDGE_PANEL.md#controls-page)
+On build 336, the user confirmed that the Edge remote keyboard shows one readable placeholder and PC power → Unlock PC displays the phone authentication prompt. [Edge controls](EDGE_PANEL.md#controls-page)
+
+The status-bar network-speed readout and SSH session reuse across Edge controls still await on-device confirmation.
 
 ## Device and release constraints
 
