@@ -8,9 +8,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../models/device.dart';
+import '../services/plasma_power.dart';
 import '../services/remote_desktop.dart';
 import '../services/remote_keyboard.dart';
 import '../ssh/ssh_session.dart';
+import '../services/wayland_access.dart';
+import '../widgets/wayland_access_button.dart';
 
 enum _LiveDesktopMenuAction {
   responsive,
@@ -26,11 +29,13 @@ enum _LiveDesktopMenuAction {
 class RemoteDesktopScreen extends StatefulWidget {
   final Device device;
   final SshSession session;
+  final bool startOnOpen;
 
   const RemoteDesktopScreen({
     super.key,
     required this.device,
     required this.session,
+    this.startOnOpen = false,
   });
 
   @override
@@ -49,6 +54,7 @@ class _RemoteDesktopScreenState extends State<RemoteDesktopScreen>
   String? _error;
   bool _starting = false;
   bool _fullScreen = false;
+  bool _requestingSleep = false;
   DesktopInputMode _inputMode = DesktopInputMode.pointer;
   DesktopPointerSensitivity _sensitivity = DesktopPointerSensitivity.high;
   DesktopStreamMode _streamMode = DesktopStreamMode.responsive;
@@ -64,6 +70,13 @@ class _RemoteDesktopScreenState extends State<RemoteDesktopScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    if (widget.startOnOpen) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && ModalRoute.of(context)?.isCurrent == true) {
+          unawaited(_start());
+        }
+      });
+    }
   }
 
   Future<void> _restoreScreenChrome() async {
@@ -189,6 +202,7 @@ class _RemoteDesktopScreenState extends State<RemoteDesktopScreen>
 
   Future<void> _sendText() async {
     final controller = TextEditingController();
+    final wayland = _stream?.wayland == true;
     final text = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
@@ -199,8 +213,10 @@ class _RemoteDesktopScreenState extends State<RemoteDesktopScreen>
           minLines: 1,
           maxLines: 5,
           textCapitalization: TextCapitalization.sentences,
-          decoration: const InputDecoration(
-            hintText: 'Text is sent only when you tap Send',
+          decoration: InputDecoration(
+            hintText: wayland
+                ? 'Pastes through the PC clipboard'
+                : 'Text is sent only when you tap Send',
             border: OutlineInputBorder(),
           ),
         ),
@@ -219,12 +235,17 @@ class _RemoteDesktopScreenState extends State<RemoteDesktopScreen>
     controller.dispose();
     if (text == null || text.isEmpty || !mounted) return;
     try {
-      await sendRemoteKeyboard(
-        widget.device,
-        widget.session,
-        windows: _stream?.windows ?? widget.device.shellStyle == 'windows',
-        text: text,
-      );
+      final stream = _stream;
+      if (stream != null) {
+        await stream.sendText(text);
+      } else {
+        await sendRemoteKeyboard(
+          widget.device,
+          widget.session,
+          windows: widget.device.shellStyle == 'windows',
+          text: text,
+        );
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Text received by the remote device')),
@@ -324,6 +345,13 @@ class _RemoteDesktopScreenState extends State<RemoteDesktopScreen>
                         ?.copyWith(color: Colors.white),
                     textAlign: TextAlign.center,
                   ),
+                  if (_starting && widget.device.shellStyle == 'linux') ...[
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Approve on the PC if KDE asks.',
+                      style: TextStyle(color: Colors.white70),
+                    ),
+                  ],
                   if (_error != null) ...[
                     const SizedBox(height: 12),
                     SelectableText(
@@ -564,6 +592,17 @@ class _RemoteDesktopScreenState extends State<RemoteDesktopScreen>
           ),
         ),
         actions: [
+          if (widget.device.commandProfile == 'cachyos')
+            TextButton.icon(
+              onPressed: !_live || _requestingSleep
+                  ? null
+                  : () {
+                      Navigator.pop(dialogContext);
+                      unawaited(_lockAndSleep());
+                    },
+              icon: const Icon(Icons.nights_stay_outlined),
+              label: const Text('Lock & sleep'),
+            ),
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
             child: const Text('Done'),
@@ -572,6 +611,30 @@ class _RemoteDesktopScreenState extends State<RemoteDesktopScreen>
       );
     },
   );
+
+  Future<void> _lockAndSleep() async {
+    if (_requestingSleep || !_live) return;
+    setState(() => _requestingSleep = true);
+    try {
+      final accepted = await requestPlasmaPower(
+        context,
+        device: widget.device,
+        session: widget.session,
+        action: PlasmaPowerAction.lockAndSleep,
+      );
+      if (mounted && accepted) await _stop();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(error is StateError ? error.message : '$error'),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _requestingSleep = false);
+    }
+  }
 
   Widget _optionsMenuButton({bool fullscreen = false}) => fullscreen
       ? IconButton.filledTonal(
@@ -592,6 +655,13 @@ class _RemoteDesktopScreenState extends State<RemoteDesktopScreen>
       appBar: AppBar(
         title: const Text('Live desktop'),
         actions: [
+          if (_stream == null && widget.device.shellStyle == 'linux')
+            WaylandAccessButton(
+              device: widget.device,
+              session: widget.session,
+              mode: WaylandAccessMode.desktop,
+              enabled: !_starting,
+            ),
           if (_frame != null)
             IconButton(
               tooltip: 'Type text',

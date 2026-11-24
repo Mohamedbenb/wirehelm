@@ -32,8 +32,18 @@ import os
 import subprocess
 import shutil
 
-sdk = Path(os.environ.get('ANDROID_SDK_ROOT', Path.home() / 'AppData/Local/Android/sdk'))
-jdk = Path(os.environ.get('JAVA_HOME', 'C:/Program Files/Android/Android Studio/jbr'))
+sdk = Path(os.environ.get('ANDROID_SDK_ROOT') or os.environ.get('ANDROID_HOME') or
+           Path.home() / ('AppData/Local/Android/sdk' if os.name == 'nt' else 'Android/Sdk'))
+jdk = os.environ.get('JAVA_HOME')
+if jdk:
+    javac = Path(jdk) / 'bin' / ('javac.exe' if os.name == 'nt' else 'javac')
+elif os.name == 'nt':
+    jdk = 'C:/Program Files/Android/Android Studio/jbr'
+    javac = Path(jdk) / 'bin/javac.exe'
+else:
+    javac = shutil.which('javac')
+    if not javac:
+        raise SystemExit('Set JAVA_HOME or add javac to PATH.')
 work = root / 'build/carrier-patcher'
 classes = work / 'classes'
 dex = work / 'dex'
@@ -44,10 +54,11 @@ platforms = sorted((sdk/'platforms').glob('android*/android.jar'), key=lambda p:
 if not platforms:
     raise SystemExit('No Android SDK platform found for carrier patcher compilation')
 android_jar = platforms[-1]
-d8 = sdk / 'build-tools/36.0.0/d8.bat'
+d8 = sdk / 'build-tools/36.0.0' / ('d8.bat' if os.name == 'nt' else 'd8')
 env = os.environ.copy()
-env['JAVA_HOME'] = str(jdk)
-subprocess.run([str(jdk/'bin/javac.exe'), '-encoding', 'UTF-8', '--release', '17', '-classpath', str(android_jar), '-d', str(classes), str(source)], check=True, env=env)
+if jdk:
+    env['JAVA_HOME'] = jdk
+subprocess.run([str(javac), '-encoding', 'UTF-8', '--release', '17', '-classpath', str(android_jar), '-d', str(classes), str(source)], check=True, env=env)
 compiled = sorted(classes.rglob('*.class'))
 subprocess.run([str(d8), '--min-api', '26', '--lib', str(android_jar), '--output', str(dex), *map(str, compiled)], check=True, env=env)
 module = root / 'modules/node-cockpit-carrier'

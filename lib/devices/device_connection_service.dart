@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import '../services/background_keep_alive.dart';
@@ -93,7 +94,7 @@ class DeviceConnectionService {
     final connectClock = Stopwatch()..start();
     SSHSocket? socket;
     SSHClient? client;
-    String? route, connectedHost;
+    String? route, connectedHost, hostKeyIdentity;
     final trustedHost = await _knownHostStorage.getKnownHost(
       host: device.host,
       port: device.port,
@@ -135,22 +136,34 @@ class DeviceConnectionService {
                   String.fromCharCodes(fingerprint) == trustedHost.fingerprint
             : (Device targetDevice, String keyType, Uint8List fingerprint) =>
                   verifyHostKey(targetDevice, keyType, fingerprint);
+        String? verifiedKey;
+        Future<bool> recordVerifiedKey(
+          Device target,
+          String type,
+          Uint8List fingerprint,
+        ) async {
+          final trusted = await verifier(target, type, fingerprint);
+          if (trusted) verifiedKey = '$type:${base64Encode(fingerprint)}';
+          return trusted;
+        }
+
         attemptClient = device.authType == 'password'
             ? await _createPasswordClient(
                 socket: attemptSocket,
                 device: device,
-                verifyHostKey: verifier,
+                verifyHostKey: recordVerifiedKey,
               )
             : await _createKeyClient(
                 socket: attemptSocket,
                 device: device,
-                verifyHostKey: verifier,
+                verifyHostKey: recordVerifiedKey,
               );
         await attemptClient.authenticated;
         socket = attemptSocket;
         client = attemptClient;
         route = local ? 'LAN' : route;
         connectedHost = host;
+        hostKeyIdentity = verifiedKey;
       } catch (_) {
         attemptClient?.close();
         attemptSocket?.close();
@@ -227,6 +240,9 @@ class DeviceConnectionService {
         deviceId: device.id,
         route: route,
         host: connectedHost,
+        hostKeyIdentity: hostKeyIdentity,
+        configuredEndpoint: '${device.host}:${device.port}',
+        authenticatedUsername: device.username,
       );
       session.connectionDuration = connectClock.elapsed;
       if (route == 'LAN' && connectedHost != savedLocalHost) {

@@ -11,6 +11,12 @@ class Device {
 
   // auto | windows | linux
   final String shellStyle;
+  final String? desktopProfile;
+
+  String get commandProfile =>
+      shellStyle == 'linux' && desktopProfile == 'cachyos'
+      ? 'cachyos'
+      : shellStyle;
 
   // key | password
   final String authType;
@@ -32,6 +38,7 @@ class Device {
     required this.port,
     required this.username,
     this.shellStyle = 'auto',
+    this.desktopProfile,
     this.authType = 'key',
     this.identityId,
     this.passwordId,
@@ -61,6 +68,7 @@ class Device {
       port: port ?? this.port,
       username: username ?? this.username,
       shellStyle: shellStyle ?? this.shellStyle,
+      desktopProfile: desktopProfile,
       authType: authType ?? this.authType,
       identityId: identityId ?? this.identityId,
       passwordId: passwordId ?? this.passwordId,
@@ -78,6 +86,7 @@ class Device {
       'port': port,
       'username': username,
       'shellStyle': shellStyle,
+      if (desktopProfile != null) 'desktopProfile': desktopProfile,
       'authType': authType,
       'identityId': identityId,
       'passwordId': passwordId,
@@ -100,6 +109,7 @@ class Device {
       // Backward-compatible with devices
       // already saved on your phone.
       shellStyle: json['shellStyle'] as String? ?? 'auto',
+      desktopProfile: json['desktopProfile'] as String?,
 
       authType: json['authType'] as String? ?? 'key',
 

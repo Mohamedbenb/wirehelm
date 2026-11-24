@@ -65,6 +65,13 @@ class SshSession extends ChangeNotifier {
   DateTime? _helperRetryAt;
   String? connectionRoute;
   String? connectedHost;
+  String? _hostKeyIdentity;
+  String? _configuredEndpoint;
+  String? get configuredEndpoint => _connected ? _configuredEndpoint : null;
+  String? _authenticatedUsername;
+  String? get hostKeyIdentity => _connected ? _hostKeyIdentity : null;
+  String? get authenticatedUsername =>
+      _connected ? _authenticatedUsername : null;
   Duration? connectionDuration;
   final List<Map<String, dynamic>> commandTimings = [];
   void _recordTiming(String mode, Map<String, int> timing) {
@@ -199,6 +206,9 @@ class SshSession extends ChangeNotifier {
     required String deviceId,
     String? route,
     String? host,
+    String? hostKeyIdentity,
+    String? configuredEndpoint,
+    String? authenticatedUsername,
   }) {
     final previousDeviceId = _deviceId ?? _lastDeviceId;
 
@@ -233,6 +243,9 @@ class SshSession extends ChangeNotifier {
     _deviceId = deviceId;
     connectionRoute = route;
     connectedHost = host;
+    _hostKeyIdentity = hostKeyIdentity;
+    _configuredEndpoint = configuredEndpoint;
+    _authenticatedUsername = authenticatedUsername;
 
     _lastDeviceId = deviceId;
 

@@ -96,7 +96,7 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
 
     _passwordController = TextEditingController();
 
-    _shellStyle = device?.shellStyle ?? widget.initialShellStyle;
+    _shellStyle = device?.commandProfile ?? widget.initialShellStyle;
 
     _authType = device?.authType ?? 'password';
 
@@ -370,7 +370,8 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
 
         username: _usernameController.text.trim(),
 
-        shellStyle: _shellStyle,
+        shellStyle: _shellStyle == 'cachyos' ? 'linux' : _shellStyle,
+        desktopProfile: _shellStyle == 'cachyos' ? 'cachyos' : null,
 
         authType: _authType,
 
@@ -478,6 +479,9 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
         return 'Windows command environment. '
             'Windows-specific defaults and interactive '
             'desktop commands are available.';
+
+      case 'cachyos':
+        return 'CachyOS with KDE Plasma. Use the same SSH account that is signed in on the PC. Approve keyboard and desktop access on the PC when prompted.';
 
       case 'linux':
         return 'Linux/Unix command environment. '
@@ -630,6 +634,10 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
                     DropdownMenuItem(value: 'auto', child: Text('Auto')),
                     DropdownMenuItem(value: 'windows', child: Text('Windows')),
                     DropdownMenuItem(value: 'linux', child: Text('Linux')),
+                    DropdownMenuItem(
+                      value: 'cachyos',
+                      child: Text('CachyOS · KDE Plasma'),
+                    ),
                   ],
                   onChanged: (value) {
                     if (value == null || value == _shellStyle) {
@@ -646,6 +654,12 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
                       _selectedDefaults.removeWhere(
                         (id) => !availableIds.contains(id),
                       );
+
+                      if (!_editing && value == 'cachyos') {
+                        _selectedDefaults.addAll(
+                          cachyosDesktopCommands.map((command) => command.id),
+                        );
+                      }
 
                       _dirty = true;
                     });

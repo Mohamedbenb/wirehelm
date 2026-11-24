@@ -7,6 +7,7 @@ import 'package:dartssh2/dartssh2.dart';
 import '../models/device.dart';
 import '../ssh/ssh_session.dart';
 import 'download_store.dart';
+import 'linux_desktop.dart';
 
 class RemoteScreenshotCapture {
   final Uint8List preview;
@@ -65,7 +66,9 @@ try {
 } finally { $g.Dispose(); $b.Dispose() }
 ''';
 
-const linuxScreenshotScript = r'''
+const linuxScreenshotScript =
+    linuxDesktopEnvironment +
+    r'''
 set -e
 stale_before=$(date -d '24 hours ago' +%s 2>/dev/null || echo 0)
 for old in /tmp/NodeCockpit_Screenshot_*; do
@@ -76,16 +79,22 @@ for old in /tmp/NodeCockpit_Screenshot_*; do
 done
 d=$(mktemp -d /tmp/NodeCockpit_Screenshot_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX)
 chmod 700 "$d"
+trap 'rm -f -- "$d/original.png" "$d/preview.jpg"; rmdir -- "$d"' EXIT
 f="$d/original.png"
 export DISPLAY=${DISPLAY:-:0}
-if command -v grim >/dev/null 2>&1 && [ -n "${WAYLAND_DISPLAY:-}" ]; then grim "$f"
+if [ -n "${WAYLAND_DISPLAY:-}" ] && [ -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ]; then
+  if command -v spectacle >/dev/null 2>&1; then
+    QT_QPA_PLATFORM=wayland spectacle --background --nonotify --fullscreen --output "$f"
+  elif command -v grim >/dev/null 2>&1; then grim "$f"
+  else echo 'Install Spectacle for KDE or grim for a compatible Wayland compositor.' >&2; exit 1; fi
 elif command -v scrot >/dev/null 2>&1; then scrot "$f"
 elif command -v gnome-screenshot >/dev/null 2>&1; then gnome-screenshot -f "$f"
-else rmdir "$d"; echo 'Install scrot (X11) or grim (Wayland), and connect as the desktop user.' >&2; exit 1; fi
-test -s "$f" || { rm -rf -- "$d"; echo 'Screenshot tool returned no image.' >&2; exit 1; }
+else echo 'Install scrot on X11 and connect as the signed-in desktop user.' >&2; exit 1; fi
+test -s "$f" || { echo 'Screenshot tool returned no image.' >&2; exit 1; }
 if command -v ffmpeg >/dev/null 2>&1; then ffmpeg -loglevel error -y -i "$f" -vf 'scale=1280:-2:force_original_aspect_ratio=decrease' -q:v 8 "$d/preview.jpg"
 elif command -v convert >/dev/null 2>&1; then convert "$f" -resize '1280x1280>' -quality 55 "$d/preview.jpg"
 else cp "$f" "$d/preview.jpg"; fi
+trap - EXIT
 printf '__COCKPIT_PATH__'; printf %s "$f" | base64 | tr -d '\n'; printf '\n'
 printf '__COCKPIT_PREVIEW__'; base64 "$d/preview.jpg" | tr -d '\n'; printf '\n'
 ''';
@@ -110,7 +119,9 @@ Future<RemoteScreenshotCapture> takeRemoteScreenshot(
   }
   final windows = await _isWindows(device, session);
   final result = await session.runCommand(
-    windows ? windowsScreenshotScript : linuxScreenshotScript,
+    windows
+        ? windowsScreenshotScript
+        : 'sh -c ${desktopShellQuote(linuxScreenshotScript)}',
     executionMode: windows ? 'interactive' : 'standard',
     timeout: const Duration(seconds: 60),
   );

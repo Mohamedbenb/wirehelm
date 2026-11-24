@@ -7,7 +7,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/device.dart';
 import '../services/remote_keyboard.dart';
+import '../services/linux_desktop.dart';
+import '../services/wayland_access.dart';
 import '../ssh/ssh_session.dart';
+import '../widgets/wayland_access_button.dart';
 
 enum _KeyboardPad { keys, shortcuts }
 
@@ -27,6 +30,9 @@ class RemoteKeyboardScreen extends StatefulWidget {
 
 class _RemoteKeyboardScreenState extends State<RemoteKeyboardScreen> {
   final text = TextEditingController();
+  final _wayland = WaylandKeyboard();
+  bool _terminalPaste = false;
+  bool _isWayland = false;
   bool busy = false;
   bool failed = false;
   String? message;
@@ -156,6 +162,7 @@ class _RemoteKeyboardScreenState extends State<RemoteKeyboardScreen> {
 
   @override
   void dispose() {
+    _wayland.dispose();
     text.dispose();
     super.dispose();
   }
@@ -176,17 +183,10 @@ class _RemoteKeyboardScreenState extends State<RemoteKeyboardScreen> {
       message = null;
     });
     try {
-      windows ??= widget.device.shellStyle == 'auto'
-          ? !utf8
-                .decode(
-                  await widget.session.run(
-                    'uname -s',
-                    timeout: const Duration(seconds: 5),
-                  ),
-                  allowMalformed: true,
-                )
-                .contains('Linux')
-          : widget.device.shellStyle == 'windows';
+      windows ??= await remoteKeyboardUsesWindows(
+        widget.device,
+        widget.session,
+      );
       await sendRemoteKeyboard(
         widget.device,
         widget.session,
@@ -194,6 +194,18 @@ class _RemoteKeyboardScreenState extends State<RemoteKeyboardScreen> {
         key: key,
         shortcut: shortcut,
         text: sendingText ? value : null,
+        wayland: _wayland,
+        terminalPaste: _terminalPaste,
+        onPermission: (restoring) {
+          if (mounted) {
+            setState(() {
+              _isWayland = true;
+              message = restoring
+                  ? 'Connecting with saved KDE approval…'
+                  : 'Allow keyboard access in the KDE prompt on the PC.';
+            });
+          }
+        },
       );
       if (mounted) {
         setState(() {
@@ -217,6 +229,15 @@ class _RemoteKeyboardScreenState extends State<RemoteKeyboardScreen> {
       }
     } finally {
       if (mounted) setState(() => busy = false);
+    }
+  }
+
+  Future<void> _sendToTerminal() async {
+    _terminalPaste = true;
+    try {
+      await send();
+    } finally {
+      _terminalPaste = false;
     }
   }
 
@@ -280,9 +301,10 @@ class _RemoteKeyboardScreenState extends State<RemoteKeyboardScreen> {
           'Text clears after the remote input command completes. This confirms '
           'the command completed, not which app accepted the text. '
           'Restore last sent text brings your last draft back.\n\n'
-          'Windows requires a signed-in desktop. Linux requires xdotool and '
-          'access to the X11 display (DISPLAY, default :0). '
-          'Wayland is not supported yet.',
+          'On KDE Wayland, approve access on the PC when prompted. Use the '
+          'shield to remember approval for future sessions. Send text '
+          'sets the PC clipboard and presses Ctrl+V. Use Paste in terminal for '
+          'Ctrl+Shift+V. X11 uses xdotool and Windows uses its signed-in desktop.',
         ),
       ),
       actions: [
@@ -624,11 +646,10 @@ class _RemoteKeyboardScreenState extends State<RemoteKeyboardScreen> {
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                busy
-                    ? sendingKey == null
-                          ? 'Sending text…'
-                          : 'Sending $sendingKey…'
-                    : message!,
+                message ??
+                    (sendingKey == null
+                        ? 'Sending text…'
+                        : 'Sending $sendingKey…'),
                 style: TextStyle(color: failed ? colors.error : colors.primary),
               ),
             ),
@@ -659,6 +680,14 @@ class _RemoteKeyboardScreenState extends State<RemoteKeyboardScreen> {
         ],
       ),
       actions: [
+        if (widget.device.shellStyle == 'linux' || _isWayland)
+          WaylandAccessButton(
+            device: widget.device,
+            session: widget.session,
+            mode: WaylandAccessMode.keyboard,
+            enabled: !busy,
+            onChanged: _wayland.closeSession,
+          ),
         IconButton(
           tooltip: 'Choose visible keys and shortcuts',
           onPressed: _customizeButtons,
@@ -714,7 +743,10 @@ class _RemoteKeyboardScreenState extends State<RemoteKeyboardScreen> {
                     children: [
                       Expanded(
                         child: Text(
-                          'To the focused window',
+                          _isWayland ||
+                                  widget.device.commandProfile == 'cachyos'
+                              ? 'Pastes through the PC clipboard'
+                              : 'To the focused window',
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ),
@@ -731,6 +763,16 @@ class _RemoteKeyboardScreenState extends State<RemoteKeyboardScreen> {
                       ),
                     ],
                   ),
+                  if (_isWayland || widget.device.commandProfile == 'cachyos')
+                    ValueListenableBuilder<TextEditingValue>(
+                      valueListenable: text,
+                      builder: (context, value, child) => TextButton(
+                        onPressed: busy || value.text.isEmpty
+                            ? null
+                            : _sendToTerminal,
+                        child: const Text('Paste in terminal'),
+                      ),
+                    ),
                   if (busy || message != null) _feedback(),
                   if (lastSentText != null)
                     TextButton.icon(

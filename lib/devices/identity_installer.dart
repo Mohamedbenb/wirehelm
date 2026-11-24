@@ -47,6 +47,10 @@ class IdentityInstaller {
       );
     }
 
+    if (RegExp(r'[\r\n\x00]').hasMatch(key)) {
+      throw const FormatException('An SSH public key must be a single line.');
+    }
+
     switch (device.shellStyle) {
       case 'linux':
         return _installLinux(targetSession, key);
@@ -68,9 +72,10 @@ class IdentityInstaller {
   ) async {
     final quotedKey = _shellQuote(publicKey);
 
-    final command =
+    final script =
         '''
-set -e
+set -eu
+umask 077
 
 ssh_dir="\$HOME/.ssh"
 authorized="\$ssh_dir/authorized_keys"
@@ -86,6 +91,9 @@ key=$quotedKey
 if grep -qxF -- "\$key" "\$authorized"; then
     printf '%s\\n' '$_existsMarker'
 else
+    if [ -s "\$authorized" ] && [ "\$(tail -c 1 "\$authorized" | wc -l)" -eq 0 ]; then
+        printf '\\n' >> "\$authorized"
+    fi
     printf '%s\\n' "\$key" >> "\$authorized"
     printf '%s\\n' '$_installedMarker'
 fi
@@ -93,7 +101,11 @@ fi
 printf '%s%s\\n' '$_targetMarker' "\$authorized"
 ''';
 
-    final result = await session.run(command);
+    final result = await session.run(
+      'sh -s',
+      input: Uint8List.fromList(utf8.encode(script)),
+      timeout: const Duration(seconds: 15),
+    );
 
     final output = utf8.decode(result, allowMalformed: true);
 
@@ -169,9 +181,9 @@ if (\$alreadyExists) { Write-Output '$_existsMarker' } else { Write-Output '$_in
   }
 
   IdentityInstallResult _parseResult(String output) {
-    final installed = output.contains(_installedMarker);
-
-    final alreadyInstalled = output.contains(_existsMarker);
+    final lines = const LineSplitter().convert(output);
+    final installed = lines.contains(_installedMarker);
+    final alreadyInstalled = lines.contains(_existsMarker);
 
     if (!installed && !alreadyInstalled) {
       throw Exception(
@@ -185,7 +197,7 @@ if (\$alreadyExists) { Write-Output '$_existsMarker' } else { Write-Output '$_in
 
     String? target;
 
-    for (final line in const LineSplitter().convert(output)) {
+    for (final line in lines) {
       if (line.startsWith(_targetMarker)) {
         target = line.substring(_targetMarker.length).trim();
 

@@ -9,6 +9,7 @@ import 'package:remote_control/models/device.dart';
 import 'package:remote_control/screens/linux_health_screen.dart';
 import 'package:remote_control/services/linux_health.dart';
 import 'package:remote_control/ssh/ssh_session.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 const _report = '''
 __RC_LINUX_HEALTH__\tgateway\t192.168.1.1
@@ -63,6 +64,32 @@ class ConnectedPiSession extends SshSession {
   }) async {
     lastCommand = command;
     return Uint8List.fromList(utf8.encode(response));
+  }
+}
+
+class _WakePiSession extends ConnectedPiSession {
+  _WakePiSession(super.response);
+
+  final steps = <String>[];
+
+  @override
+  Future<Uint8List> run(
+    String command, {
+    Uint8List? input,
+    Duration? timeout,
+  }) async {
+    if (command.startsWith('wakeonlan ')) {
+      expect(command, contains('192.168.1.255'));
+      expect(command, contains('D8:43:AE:11:22:33'));
+      steps.add('wake');
+      return utf8.encode('__NC_WAKE_SENT__');
+    }
+    if (command.startsWith('if command -v nc ')) {
+      expect(command, contains("'192.168.1.30' 22"));
+      steps.add('probe');
+      return utf8.encode('__NC_PC_READY__');
+    }
+    return super.run(command, input: input, timeout: timeout);
   }
 }
 
@@ -159,6 +186,63 @@ __RC_LINUX_HEALTH__\tthrottled\t0x50001
     expect(find.text('Remote capabilities'), findsOneWidget);
     expect(tester.takeException(), isNull);
     expect(session.lastCommand, contains('pc_port=22'));
+    session.dispose();
+  });
+  testWidgets('Pi wakes the saved CachyOS PC before opening its SSH session', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({
+      'pi_wake_mac_pi_cachyos': 'D8:43:AE:11:22:33',
+    });
+    const pc = Device(
+      id: 'cachyos',
+      name: 'CachyOS PC',
+      host: '192.168.1.30',
+      port: 22,
+      username: 'owner',
+      shellStyle: 'linux',
+      desktopProfile: 'cachyos',
+      commands: [],
+    );
+    final sleeping = _report.replaceFirst(
+      'pc_ssh\treachable',
+      'pc_ssh\tunreachable',
+    );
+    final session = _WakePiSession(
+      '${sleeping}__RC_LINUX_HEALTH__\tpc_route_kind\tdirect_lan\n'
+      '__RC_LINUX_HEALTH__\tpc_cidr\t192.168.1.20/24\n',
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: LinuxHealthScreen(
+          device: const Device(
+            id: 'pi',
+            name: 'Raspberry Pi',
+            host: '192.168.1.20',
+            port: 22,
+            username: 'pi',
+            shellStyle: 'linux',
+            commands: [],
+          ),
+          session: session,
+          peerDevices: const [pc],
+          onConnectPeer: (peer) async {
+            expect(peer.id, pc.id);
+            session.steps.add('connect');
+            throw StateError('Stop before starting the stream.');
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final open = find.text('Wake & open desktop');
+    await tester.scrollUntilVisible(open, 200);
+    await tester.pumpAndSettle();
+    await tester.tap(open.hitTestable());
+    await tester.pumpAndSettle();
+    expect(session.steps, ['wake', 'probe', 'connect']);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
     session.dispose();
   });
 }

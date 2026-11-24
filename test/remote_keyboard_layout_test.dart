@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:remote_control/models/device.dart';
 import 'package:remote_control/screens/remote_keyboard_screen.dart';
+import 'package:remote_control/services/remote_keyboard.dart';
 import 'package:remote_control/ssh/ssh_session.dart';
 
 const _device = Device(
@@ -41,6 +42,23 @@ class _Session extends SshSession {
 }
 
 void main() {
+  test('a closed panel sends no desktop input', () async {
+    final session = _Session();
+    addTearDown(session.dispose);
+
+    await expectLater(
+      sendRemoteKeyboard(
+        _device,
+        session,
+        windows: true,
+        text: 'A local draft',
+        canSend: () async => false,
+      ),
+      throwsStateError,
+    );
+    expect(session.commands, isEmpty);
+  });
+
   testWidgets('acknowledgement leaves a newly typed draft intact', (
     tester,
   ) async {
@@ -153,7 +171,9 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Using the remote keyboard'), findsOneWidget);
       expect(
-        find.textContaining('Wayland is not supported yet'),
+        find.textContaining(
+          'On KDE Wayland, approve access on the PC when prompted.',
+        ),
         findsOneWidget,
       );
       expect(session.commands, hasLength(1));

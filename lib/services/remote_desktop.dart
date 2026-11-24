@@ -7,7 +7,10 @@ import 'package:dartssh2/dartssh2.dart';
 
 import '../models/device.dart';
 import '../ssh/ssh_session.dart';
+import 'linux_desktop.dart';
+import 'remote_keyboard.dart';
 import 'remote_media.dart';
+import 'wayland_access.dart';
 
 const windowsDesktopWorkerScript = r'''
 param([string]$root)
@@ -323,6 +326,11 @@ class RemoteDesktopStream {
   StreamSubscription<Uint8List>? _inputStdout;
   StreamSubscription<Uint8List>? _inputStderr;
   StreamSubscription<String>? _windowsOutput;
+  StreamSubscription<String>? _waylandStderr;
+  Future<void>? _waylandApproval;
+  Completer<void>? _waylandTextReply;
+  int _waylandTextSequence = 0;
+  bool _wayland = false;
   Timer? _limit;
   bool _windows = false, _stopped = false;
   final DesktopStreamMode mode;
@@ -337,6 +345,7 @@ class RemoteDesktopStream {
   Stream<Uint8List> get frames => _frames.stream;
   Stream<String> get errors => _errors.stream;
   bool get windows => _windows;
+  bool get wayland => _wayland;
 
   Future<void> start() async {
     if (!session.isConnected || session.deviceId != device.id) {
@@ -395,9 +404,15 @@ class RemoteDesktopStream {
   }
 
   Future<void> _startLinux(SSHClient client) async {
+    _wayland = await usesWayland(session);
+    if (_stopped) return;
+    if (_wayland) {
+      await _startWayland(client);
+      return;
+    }
     final inputReady = Completer<void>();
     final input = await client.execute(
-      'sh -lc ${_shellQuote(linuxDesktopInputScript)}',
+      'sh -lc ${_shellQuote(linuxDesktopEnvironment + linuxDesktopInputScript)}',
     );
     if (_stopped) {
       input.close();
@@ -441,7 +456,7 @@ class RemoteDesktopStream {
           '-q:v 8',
           '-q:v ${((100 - settings.quality) / 5).round().clamp(2, 15)}',
         );
-    final quoted = _shellQuote(captureScript);
+    final quoted = _shellQuote(linuxDesktopEnvironment + captureScript);
     final channel = await client.execute('sh -lc $quoted');
     if (_stopped) {
       channel.close();
@@ -468,6 +483,108 @@ class RemoteDesktopStream {
       if (text.isNotEmpty) _error = text;
     });
     await _ready.future.timeout(const Duration(seconds: 20));
+  }
+
+  Future<void> _startWayland(SSHClient client) async {
+    final access = await WaylandAccess.read(
+      device,
+      session,
+      WaylandAccessMode.desktop,
+    );
+    final settings = _streamSettings(mode);
+    final command = await waylandWorkerCommand(
+      mode: 'desktop',
+      args: [settings.width, settings.fps, settings.quality],
+    );
+    if (_stopped) return;
+    final channel = await client.execute(command);
+    if (_stopped || !identical(client, session.client)) {
+      channel.close();
+      if (_stopped) return;
+      throw StateError('The desktop connection changed.');
+    }
+    _exec = channel;
+    _waylandStderr = channel.stderr
+        .cast<List<int>>()
+        .transform(const Utf8Decoder(allowMalformed: true))
+        .transform(const LineSplitter())
+        .listen((line) {
+          try {
+            final response = jsonDecode(line);
+            if (response is Map && response['portalReady'] == true) {
+              if (!_stopped && identical(client, session.client)) {
+                _waylandApproval ??= access
+                    .recordApproval(response['restoreToken'])
+                    .catchError((Object _) {
+                      _errors.add('Could not save KDE desktop approval.');
+                    });
+              }
+              return;
+            }
+            final reply = _waylandTextReply;
+            if (response is Map &&
+                response['id'] == _waylandTextSequence &&
+                reply != null &&
+                !reply.isCompleted) {
+              if (response['ok'] == true) {
+                reply.complete();
+              } else {
+                reply.completeError(
+                  StateError('KDE could not paste the text.'),
+                );
+              }
+              return;
+            }
+          } on FormatException {
+            if (line.trim().isNotEmpty) _error = line.trim();
+          }
+        });
+    _stdout = channel.stdout.listen(
+      (bytes) {
+        try {
+          for (final image in _jpeg.add(bytes)) {
+            _frameCount++;
+            _frames.add(image);
+            if (!_ready.isCompleted) _ready.complete();
+          }
+        } catch (error) {
+          _fail(error);
+        }
+      },
+      onError: _fail,
+      onDone: _onDone,
+    );
+    channel.stdin.add(access.startupMessage);
+    await _ready.future.timeout(
+      const Duration(seconds: 100),
+      onTimeout: () => throw StateError(
+        'Approve sharing in the PC’s desktop prompt, then retry.',
+      ),
+    );
+  }
+
+  Future<void> sendText(String text) async {
+    if (!_wayland) {
+      await sendRemoteKeyboard(device, session, windows: _windows, text: text);
+      return;
+    }
+    final channel = _exec;
+    if (_stopped || channel == null || _frameCount == 0) {
+      throw StateError('Start live desktop first.');
+    }
+    if (_waylandTextReply != null) {
+      throw StateError('Text is already being sent.');
+    }
+    final event = waylandKeyboardEvent(text: text);
+    event['id'] = ++_waylandTextSequence;
+    final reply = Completer<void>();
+    _waylandTextReply = reply;
+    try {
+      channel.stdin.add(utf8.encode('${jsonEncode(event)}\n'));
+      await reply.future.timeout(const Duration(seconds: 15));
+    } finally {
+      _waylandTextReply = null;
+    }
   }
 
   void _onWindowsLine(String line) {
@@ -565,6 +682,10 @@ class RemoteDesktopStream {
       control.sink.add(utf8.encode('${jsonEncode(event)}\n'));
       return;
     }
+    if (_wayland) {
+      _exec?.stdin.add(utf8.encode('${jsonEncode(event)}\n'));
+      return;
+    }
     final input = _inputChannel;
     if (input == null) return;
     final xPercent = (x.clamp(0.0, 1.0) * 10000).round();
@@ -611,6 +732,10 @@ class RemoteDesktopStream {
     _stopped = true;
     if (!_ready.isCompleted) _ready.complete();
     _limit?.cancel();
+    final reply = _waylandTextReply;
+    if (reply != null && !reply.isCompleted) {
+      reply.completeError(StateError('The desktop session ended.'));
+    }
     try {
       _control?.sink.close();
       _control?.destroy();
@@ -633,6 +758,8 @@ class RemoteDesktopStream {
       }
     } catch (_) {}
     await _windowsOutput?.cancel();
+    await _waylandStderr?.cancel();
+    await _waylandApproval;
     await _stdout?.cancel();
     await _stderr?.cancel();
     await _inputStdout?.cancel();

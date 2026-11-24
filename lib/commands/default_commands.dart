@@ -1,4 +1,5 @@
 import '../models/remote_command.dart';
+import '../services/linux_desktop.dart';
 import 'windows_status_scripts.dart';
 
 const windowsDefaultCommands = [
@@ -388,6 +389,72 @@ const linuxDefaultCommands = [
   ),
 ];
 
+String _cachyosCommand(String command) =>
+    'sh -c ${desktopShellQuote(linuxDesktopEnvironment + command)}';
+
+final cachyosDesktopCommands = [
+  RemoteCommand(
+    id: 'cachyos_screen_power',
+    templateId: 'cachyos_screen_power',
+    name: 'Screen',
+    category: 'Display',
+    icon: 'monitor',
+    stateful: StatefulCommandConfig(
+      statusCommand: _cachyosCommand(r'''kscreen-doctor --dpms show |
+awk '/: on$/ {on=1} /: off$/ {off=1} END {print on ? "awake" : off ? "sleeping" : "unknown"}'
+'''),
+      states: [
+        StatefulCommandState(
+          id: 'awake',
+          label: 'Awake',
+          command: _cachyosCommand(plasmaDisplayPowerOn),
+          expectedStatus: 'awake',
+        ),
+        StatefulCommandState(
+          id: 'sleeping',
+          label: 'Sleeping',
+          command: _cachyosCommand('kscreen-doctor --dpms off'),
+          expectedStatus: 'sleeping',
+        ),
+      ],
+    ),
+  ),
+  RemoteCommand(
+    id: 'cachyos_lock',
+    templateId: 'cachyos_lock',
+    name: 'Lock desktop',
+    category: 'Desktop',
+    icon: 'lock',
+    command:
+        r'busctl --address="unix:path=/run/user/$(id -u)/bus" call '
+        'org.freedesktop.ScreenSaver /ScreenSaver org.freedesktop.ScreenSaver Lock',
+  ),
+  RemoteCommand(
+    id: 'cachyos_audio_status',
+    templateId: 'cachyos_audio_status',
+    name: 'Audio devices',
+    category: 'Audio',
+    icon: 'terminal',
+    command: _cachyosCommand('wpctl status'),
+  ),
+  RemoteCommand(
+    id: 'cachyos_mute',
+    templateId: 'cachyos_mute',
+    name: 'Toggle desktop mute',
+    category: 'Audio',
+    icon: 'terminal',
+    command: _cachyosCommand('wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle'),
+  ),
+  RemoteCommand(
+    id: 'cachyos_display_info',
+    templateId: 'cachyos_display_info',
+    name: 'Display information',
+    category: 'Desktop',
+    icon: 'display',
+    command: _cachyosCommand('kscreen-doctor -o'),
+  ),
+];
+
 const autoDefaultCommands = [
   RemoteCommand(
     id: 'auto_whoami',
@@ -425,6 +492,9 @@ List<RemoteCommand> defaultCommandsFor(String shellStyle) {
     case 'windows':
       return windowsDefaultCommands;
 
+    case 'cachyos':
+      return [...cachyosDesktopCommands, ...linuxDefaultCommands];
+
     case 'linux':
       return linuxDefaultCommands;
 
@@ -436,6 +506,7 @@ List<RemoteCommand> defaultCommandsFor(String shellStyle) {
 List<RemoteCommand> get allDefaultCommands => [
   ...windowsDefaultCommands,
   ...linuxDefaultCommands,
+  ...cachyosDesktopCommands,
   ...autoDefaultCommands,
 ];
 

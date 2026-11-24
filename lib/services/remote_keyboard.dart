@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import '../models/device.dart';
 import '../ssh/ssh_session.dart';
+import 'linux_desktop.dart';
 
 const remoteKeys = <String, String>{
   'Enter': 'Return',
@@ -180,6 +181,18 @@ String keyboardCommand({
   return 'command -v xdotool >/dev/null || { echo "Install xdotool on the Linux device first." >&2; exit 1; }; DISPLAY=\${DISPLAY:-:0} xdotool $action && printf "__RC_KEYS_SENT__\\n"';
 }
 
+Future<bool> remoteKeyboardUsesWindows(
+  Device device,
+  SshSession session,
+) async {
+  if (device.shellStyle != 'auto') return device.shellStyle == 'windows';
+  final response = await session.run(
+    'uname -s',
+    timeout: const Duration(seconds: 5),
+  );
+  return !utf8.decode(response, allowMalformed: true).contains('Linux');
+}
+
 Future<void> sendRemoteKeyboard(
   Device device,
   SshSession session, {
@@ -187,12 +200,46 @@ Future<void> sendRemoteKeyboard(
   String? text,
   String? key,
   String? shortcut,
+  WaylandKeyboard? wayland,
+  bool terminalPaste = false,
+  void Function(bool restoring)? onPermission,
+  Future<bool> Function()? canSend,
 }) async {
   if (!session.isConnected || session.deviceId != device.id) {
     throw StateError('Connect to this device first.');
   }
+  final command = keyboardCommand(
+    windows: windows,
+    text: text,
+    key: key,
+    shortcut: shortcut,
+  );
+  if (!windows &&
+      (wayland?.isActiveFor(session) == true || await usesWayland(session))) {
+    if (wayland == null) {
+      throw StateError('Open Remote keyboard to send keys on Wayland.');
+    }
+    await wayland.send(
+      device,
+      session,
+      waylandKeyboardEvent(
+        text: text,
+        key: key,
+        shortcut: shortcut,
+        terminalPaste: terminalPaste,
+      ),
+      onPermission: onPermission,
+      canSend: canSend,
+    );
+    return;
+  }
+  if (canSend != null && !await canSend()) {
+    throw StateError('The keyboard page is closed.');
+  }
   final bytes = await session.runCommand(
-    keyboardCommand(windows: windows, text: text, key: key, shortcut: shortcut),
+    windows
+        ? command
+        : 'sh -c ${desktopShellQuote(linuxDesktopEnvironment + command)}',
     executionMode: windows ? 'interactive' : 'standard',
     timeout: const Duration(seconds: 30),
   );
@@ -203,6 +250,23 @@ Future<void> sendRemoteKeyboard(
   if (!windows && output != '__RC_KEYS_SENT__') {
     throw StateError(output.isEmpty ? 'No keyboard acknowledgement.' : output);
   }
+}
+
+Map<String, Object> waylandKeyboardEvent({
+  String? text,
+  String? key,
+  String? shortcut,
+  bool terminalPaste = false,
+}) {
+  if (text != null) {
+    if (utf8.encode(text).length > 16384 || text.contains('\x00')) {
+      throw const FormatException('Enter up to 16 KB of text.');
+    }
+    return {'text': text, 'terminalPaste': terminalPaste};
+  }
+  return {
+    'key': shortcut == null ? remoteKeys[key]! : normalizeRemoteChord(shortcut),
+  };
 }
 
 String _windowsChord(String chord) {

@@ -17,6 +17,7 @@ class MainActivity : FlutterActivity() {
     private var customizationBridge: CustomizationBridge? = null
     private var rootFilesBridge: RootFilesBridge? = null
     private var appNetworkBridge: AppNetworkBridge? = null
+    private var desktopUnlockBridge: DesktopUnlockBridge? = null
 
     override fun getInitialRoute():String? = EdgeBuiltinShortcuts.route(intent?.getStringExtra(EdgeBuiltinShortcuts.EXTRA)) ?: super.getInitialRoute()
     override fun onNewIntent(intent:Intent){
@@ -55,6 +56,7 @@ class MainActivity : FlutterActivity() {
         customizationBridge = CustomizationBridge(this, workMessenger)
         rootFilesBridge = RootFilesBridge(this, workMessenger)
         appNetworkBridge = AppNetworkBridge(this, workMessenger)
+        desktopUnlockBridge = DesktopUnlockBridge(this, workMessenger)
         flutterEngine.platformViewsController.registry.registerViewFactory("remote_control/termux_terminal", NativeTerminalBridge(workMessenger))
 
         MethodChannel(
@@ -142,12 +144,15 @@ class MainActivity : FlutterActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        desktopUnlockBridge?.onActivityResult(requestCode, resultCode)
         if (requestCode == UploadBridge.REQUEST) uploadBridge?.selected(resultCode, data)
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
         val cleanup = ScreenOffShutdown.begin("native engine cleanup")
         try {
+        desktopUnlockBridge?.detach()
+        desktopUnlockBridge = null
         appNetworkBridge?.detach()
         appNetworkBridge = null
         rootFilesBridge?.detach()

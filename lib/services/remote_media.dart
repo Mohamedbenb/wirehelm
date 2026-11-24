@@ -3,11 +3,13 @@ import 'dart:typed_data';
 
 import '../models/device.dart';
 import '../ssh/ssh_session.dart';
+import 'linux_desktop.dart';
 
 class MediaInput {
   final String id, name;
   final bool camera;
-  const MediaInput(this.id, this.name, this.camera);
+  final bool pulse;
+  const MediaInput(this.id, this.name, this.camera, {this.pulse = false});
 }
 
 class MediaInventory {
@@ -38,16 +40,25 @@ Future<MediaInventory> discoverMedia(Device device, SshSession session) async {
     );
     windows = !output.contains('Linux');
   }
-  final output = utf8.decode(
-    await session.run(
-      windows
-          ? 'ffmpeg -version && ffmpeg -hide_banner -list_devices true -f dshow -i dummy'
-          : r'''command -v ffmpeg >/dev/null && echo __FFMPEG__
+  const linuxProbe =
+      linuxDesktopEnvironment +
+      r'''
+command -v ffmpeg >/dev/null && echo __FFMPEG__
 for p in /sys/class/video4linux/video*; do
  [ -e "$p" ] || continue
  printf '__CAM__\t/dev/%s\t%s\n' "${p##*/}" "$(cat "$p/name")"
 done
-arecord -l 2>/dev/null''',
+if command -v pactl >/dev/null 2>&1 && pactl info >/dev/null 2>&1; then
+  pactl list short sources | awk '{ printf "__PULSE__\t%s\n", $2 }'
+else
+  arecord -l 2>/dev/null
+fi
+''';
+  final output = utf8.decode(
+    await session.run(
+      windows
+          ? 'ffmpeg -version && ffmpeg -hide_banner -list_devices true -f dshow -i dummy'
+          : 'sh -c ${desktopShellQuote(linuxProbe)}',
       timeout: const Duration(seconds: 15),
     ),
     allowMalformed: true,
@@ -68,6 +79,13 @@ MediaInventory parseMediaInventory(String output, bool windows) {
       if (line.startsWith('__CAM__\t')) {
         final parts = line.split('\t');
         if (parts.length >= 3) inputs.add(MediaInput(parts[1], parts[2], true));
+      }
+      if (line.startsWith('__PULSE__\t')) {
+        final id = line.substring('__PULSE__\t'.length);
+        if (id.isNotEmpty) {
+          final name = id.endsWith('.monitor') ? 'Desktop audio · $id' : id;
+          inputs.add(MediaInput(id, name, false, pulse: true));
+        }
       }
       final m = RegExp(r'^card (\d+):.*?\[(.*?)\], device (\d+):\s*(.*)')
           .firstMatch(line);
@@ -92,8 +110,16 @@ MediaInventory parseMediaInventory(String output, bool windows) {
 String mediaCaptureCommand(MediaInput input, bool windows) {
   final source = windows
       ? '-f dshow -i ${mediaQuote('${input.camera ? 'video' : 'audio'}=${input.id}', true)}'
-      : '-f ${input.camera ? 'v4l2' : 'alsa'} -i ${mediaQuote(input.id, false)}';
-  return 'ffmpeg -hide_banner -loglevel error $source -t 600 ${input.camera ? '-an -vf scale=640:-2,fps=10 -c:v mjpeg -q:v 6 -f image2pipe' : '-vn -ac 1 -ar 16000 -c:a pcm_s16le -f s16le'} pipe:1';
+      : '-f ${input.camera
+            ? 'v4l2'
+            : input.pulse
+            ? 'pulse'
+            : 'alsa'} -i ${mediaQuote(input.id, false)}';
+  final command =
+      'ffmpeg -hide_banner -loglevel error $source -t 600 ${input.camera ? '-an -vf scale=640:-2,fps=10 -c:v mjpeg -q:v 6 -f image2pipe' : '-vn -ac 1 -ar 16000 -c:a pcm_s16le -f s16le'} pipe:1';
+  return input.pulse
+      ? 'sh -c ${desktopShellQuote('${linuxDesktopEnvironment}exec $command')}'
+      : command;
 }
 
 // JPEG markers may straddle SSH packets. Bound memory if a capture is corrupt.

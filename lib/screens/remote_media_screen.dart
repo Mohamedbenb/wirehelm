@@ -227,13 +227,13 @@ class _RemoteMediaScreenState extends State<RemoteMediaScreen>
             ? 'Detection needs FFmpeg on the remote device.'
             : video
             ? 'No camera detected. Check hardware and capture permissions.'
-            : 'No microphone detected. Check hardware and permissions; Linux also needs alsa-utils.',
+            : 'No audio source detected. Check the microphone and desktop audio service.',
       );
     }
     return DropdownButtonFormField<MediaInput>(
       key: ValueKey('${video}_${identityHashCode(inventory)}'),
       initialValue: video ? camera : microphone,
-      decoration: InputDecoration(labelText: video ? 'Camera' : 'Microphone'),
+      decoration: InputDecoration(labelText: video ? 'Camera' : 'Audio source'),
       items: [
         const DropdownMenuItem<MediaInput>(value: null, child: Text('Off')),
         for (final input in options)
@@ -319,7 +319,7 @@ class _RemoteMediaScreenState extends State<RemoteMediaScreen>
                     SelectableText(
                       inventory!.windows
                           ? 'Install a Windows FFmpeg build, add its bin folder to the system PATH, reconnect SSH, then run ffmpeg -version. Enable camera and microphone access for desktop apps in Windows Settings.'
-                          : 'Debian / Ubuntu / Raspberry Pi OS:\nsudo apt update\nsudo apt install ffmpeg alsa-utils\nffmpeg -version\nThe SSH account needs camera and audio device permissions.',
+                          : 'Install FFmpeg. Connect as the signed-in desktop user for PipeWire audio, or install ALSA utilities for direct sound device access.',
                     ),
                     TextButton(
                       onPressed: loading ? null : load,
@@ -384,7 +384,7 @@ class _RemoteMediaScreenState extends State<RemoteMediaScreen>
                       Icon(Icons.mic),
                       SizedBox(width: 8),
                       Text(
-                        'Microphone',
+                        'Audio',
                         style: TextStyle(fontWeight: FontWeight.bold),
                       ),
                     ],

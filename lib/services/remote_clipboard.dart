@@ -7,6 +7,7 @@ import 'package:dartssh2/dartssh2.dart';
 import '../models/device.dart';
 import '../ssh/ssh_session.dart';
 import 'background_keep_alive.dart';
+import 'linux_desktop.dart';
 
 String _ps(String s) => "'${s.replaceAll("'", "''")}'";
 String _sh(String s) => "'${s.replaceAll("'", "'\\''")}'";
@@ -198,23 +199,29 @@ Future<void> sendClipboardToPc(
     } else {
       final type = image ? mime : 'text/plain;charset=utf-8';
       final script =
-          '''
-set -eu
+          '''${linuxDesktopEnvironment}set -eu
 f=${_sh(path)}
-export XDG_RUNTIME_DIR="\${XDG_RUNTIME_DIR:-/run/user/\$(id -u)}"
-export WAYLAND_DISPLAY="\${WAYLAND_DISPLAY:-wayland-0}"
-if command -v wl-copy >/dev/null 2>&1 && [ -S "\$XDG_RUNTIME_DIR/\$WAYLAND_DISPLAY" ]; then
- wl-copy --type ${_sh(type)} < "\$f"
+if [ -n "\$WAYLAND_DISPLAY" ] && [ -S "\$XDG_RUNTIME_DIR/\$WAYLAND_DISPLAY" ]; then
+ if command -v wl-copy >/dev/null 2>&1; then
+  wl-copy --type ${_sh(type)} < "\$f" >/dev/null 2>&1
+ elif [ ${image ? '1' : '0'} -eq 0 ]; then
+  python3 -c 'import sys; from pathlib import Path; from gi.repository import Gio, GLib; bus = Gio.bus_get_sync(Gio.BusType.SESSION, None); bus.call_sync("org.kde.klipper", "/klipper", "org.kde.klipper.klipper", "setClipboardContents", GLib.Variant("(s)", (Path(sys.argv[1]).read_bytes().decode("utf-8"),)), None, Gio.DBusCallFlags.NONE, 4000, None)' "\$f"
+ else
+  echo 'Install wl-clipboard on the PC to send images to its Wayland clipboard.' >&2; exit 1
+ fi
 elif command -v xclip >/dev/null 2>&1; then
  export DISPLAY="\${DISPLAY:-:0}"
  xclip -selection clipboard -target ${_sh(image ? mime : 'UTF8_STRING')} -in "\$f" >/dev/null 2>&1
 else
- echo 'A desktop clipboard requires wl-copy or xclip and an active desktop session.' >&2; exit 1
+ echo 'Install xclip on the PC, and sign in to its desktop.' >&2; exit 1
 fi
 printf '__WH_CLIP_OK__'
 ''';
       result = utf8.decode(
-        await session.run(script, timeout: const Duration(seconds: 30)),
+        await session.run(
+          'sh -c ${desktopShellQuote(script)}',
+          timeout: const Duration(seconds: 30),
+        ),
         allowMalformed: true,
       );
     }

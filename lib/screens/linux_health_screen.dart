@@ -4,13 +4,16 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/device.dart';
 import '../services/linux_health.dart';
 import '../services/pi_wake.dart';
+import '../services/plasma_desktop_resume.dart';
 import '../ssh/ssh_session.dart';
+import 'remote_desktop_screen.dart';
 
 class LinuxHealthScreen extends StatefulWidget {
   final Device device;
   final SshSession session;
   final List<Device> peerDevices;
   final Future<void> Function(Device)? onOpenPeer;
+  final Future<SshSession> Function(Device)? onConnectPeer;
 
   const LinuxHealthScreen({
     super.key,
@@ -18,6 +21,7 @@ class LinuxHealthScreen extends StatefulWidget {
     required this.session,
     this.peerDevices = const [],
     this.onOpenPeer,
+    this.onConnectPeer,
   });
 
   @override
@@ -36,7 +40,9 @@ class _LinuxHealthScreenState extends State<LinuxHealthScreen> {
       .where(
         (device) =>
             device.id != widget.device.id &&
-            (device.shellStyle == 'windows' || device.shellStyle == 'auto'),
+            (device.shellStyle == 'windows' ||
+                device.shellStyle == 'auto' ||
+                device.commandProfile == 'cachyos'),
       )
       .toList();
 
@@ -168,26 +174,72 @@ class _LinuxHealthScreenState extends State<LinuxHealthScreen> {
     }
   }
 
-  Future<void> _wake() async {
+  bool get _pcReachable =>
+      _readyToConnect || _report?.value('pc_ssh') == 'reachable';
+
+  bool get _canWake => _wakeMac.isNotEmpty && _broadcast != null;
+
+  Future<void> _wake({bool openDesktop = false}) async {
     final peer = _peer;
     if (peer == null || _waking) return;
+    final alreadyReachable = _pcReachable;
+    final canWake = _canWake;
     setState(() {
       _waking = true;
       _cancelWake = false;
       _readyToConnect = false;
     });
+    bool cancelled() => !mounted || _cancelWake;
+    void status(String text) {
+      if (!cancelled()) setState(() => _wakeStatus = text);
+    }
+
     try {
-      final ready = await wakePcViaPi(
-        pi: widget.device,
-        peer: peer,
-        session: widget.session,
-        mac: _wakeMac,
-        cancelled: () => !mounted || _cancelWake,
-        onStatus: (status) {
-          if (mounted) setState(() => _wakeStatus = status);
-        },
+      final ready =
+          openDesktop && !canWake && alreadyReachable ||
+          await wakePcViaPi(
+            pi: widget.device,
+            peer: peer,
+            session: widget.session,
+            mac: _wakeMac,
+            cancelled: cancelled,
+            onStatus: status,
+          );
+      if (cancelled() || !ready) return;
+      setState(() => _readyToConnect = true);
+
+      final connect = widget.onConnectPeer;
+      if (!openDesktop || connect == null) return;
+      status('Connecting to ${peer.name}…');
+      final desktopSession = await connect(peer);
+      if (cancelled()) return;
+      final prepared = await preparePlasmaDesktop(
+        device: peer,
+        session: desktopSession,
+        cancelled: cancelled,
+        onStatus: status,
       );
-      if (mounted && !_cancelWake) setState(() => _readyToConnect = ready);
+      if (!mounted || _cancelWake) return;
+      if (prepared == PlasmaDesktopPreparation.cancelled) {
+        status('Desktop unlock canceled.');
+        return;
+      }
+      if (ModalRoute.of(context)?.isCurrent != true) return;
+      status(
+        prepared == PlasmaDesktopPreparation.displayUnconfirmed
+            ? 'Display wake could not be confirmed. Opening Live desktop…'
+            : 'Opening live desktop…',
+      );
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => RemoteDesktopScreen(
+            device: peer,
+            session: desktopSession,
+            startOnOpen: true,
+          ),
+        ),
+      );
+      if (!cancelled()) setState(() => _wakeStatus = null);
     } catch (error) {
       if (mounted && !_cancelWake) setState(() => _wakeStatus = '$error');
     } finally {
@@ -221,13 +273,23 @@ class _LinuxHealthScreenState extends State<LinuxHealthScreen> {
               label: const Text('Wake setup'),
             ),
             FilledButton.icon(
-              onPressed:
-                  _waking || _loading || _wakeMac.isEmpty || _broadcast == null
+              onPressed: _waking || _loading || !_canWake
                   ? null
-                  : _wake,
+                  : () => _wake(),
               icon: const Icon(Icons.power_settings_new),
               label: const Text('Wake PC'),
             ),
+            if (_peer?.commandProfile == 'cachyos' &&
+                widget.onConnectPeer != null)
+              FilledButton.tonalIcon(
+                onPressed: _waking || _loading || (!_canWake && !_pcReachable)
+                    ? null
+                    : () => _wake(openDesktop: true),
+                icon: const Icon(Icons.desktop_windows_outlined),
+                label: Text(
+                  _pcReachable ? 'Open desktop' : 'Wake & open desktop',
+                ),
+              ),
             if (_waking)
               TextButton(
                 onPressed: () => setState(() {
@@ -236,8 +298,7 @@ class _LinuxHealthScreenState extends State<LinuxHealthScreen> {
                 }),
                 child: const Text('Stop waiting'),
               ),
-            if ((_readyToConnect || _report?.value('pc_ssh') == 'reachable') &&
-                widget.onOpenPeer != null)
+            if (_pcReachable && widget.onOpenPeer != null)
               FilledButton.tonalIcon(
                 onPressed: _waking ? null : () => widget.onOpenPeer!(_peer!),
                 icon: const Icon(Icons.link),
@@ -318,7 +379,11 @@ class _LinuxHealthScreenState extends State<LinuxHealthScreen> {
     final pcs = _pcs;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Network & Pi health'),
+        title: Text(
+          widget.device.commandProfile == 'cachyos'
+              ? 'Network & system health'
+              : 'Network & Pi health',
+        ),
         actions: [
           IconButton(
             tooltip: 'Refresh checks',
