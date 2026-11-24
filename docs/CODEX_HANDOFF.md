@@ -2,11 +2,13 @@
 
 ## Installed build
 
-Wirehelm **1.38.30 (336)** was installed in place on the Pixel 10 over Remote ADB. The relay reconnected. The signed ARM64 APK and Xposed entries were verified, and the installed APK matched `build/artifacts/Wirehelm-1.38.30-build336.apk`. Its SHA-256 is `1bbacd067456fcdd47cafbcb022d20b04ef5b033fc360f92f159d492d24bb272`.
+Wirehelm **1.38.31 (337)** was installed in place over local wireless ADB on the Pixel 10. Android reported version 1.38.31 and version code 337. The installed base APK matched `build/artifacts/Wirehelm-1.38.31-build337.apk` with SHA-256 `0326448546e682ca69637bf83c716709b838aae09477514df48e04f77a809663`.
 
-Build 336 accepts a fresh SystemUI report as evidence of the hook. The network speed switch shows its first blocker and waits for the safety check before changing state. At installation, SystemUI was running hook 204 on PID 20609, settings revisions matched at 5961, and the Edge panel reported zero errors. The network indicator was off in saved settings. Eighteen focused Flutter tests and 187 Android customization tests passed for that release. [Settings delivery](BEHAVIOR_GUIDE.md#2-settings-accepted-delivered-drawn-and-reported)
+Build 337 gives network speed, Edge panel and carrier settings their own Flutter screens. The ARM64 release passed signing and Xposed entry checks. Static analysis was clean, 199 Flutter tests passed with 13 skipped, and all 187 Android customization tests passed. [Feature owners](CODE_MAP.md)
 
 ## Hands-on checks
+
+The last runtime hook check was on build 336. SystemUI reported hook 204, settings revisions matched at 5961, and the Edge panel reported zero errors. The network indicator was off in saved settings. [Settings delivery](BEHAVIOR_GUIDE.md#2-settings-accepted-delivered-drawn-and-reported)
 
 On build 336, the user confirmed that the Edge remote keyboard shows one readable placeholder and PC power → Unlock PC displays the phone authentication prompt. [Edge controls](EDGE_PANEL.md#controls-page)
 

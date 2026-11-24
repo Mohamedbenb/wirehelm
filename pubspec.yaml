@@ -2,7 +2,7 @@ name: remote_control
 description: "Wirehelm, an Android toolkit for SSH, device control and Pixel customization."
 publish_to: 'none'
 
-version: 1.38.30+336
+version: 1.38.31+337
 
 environment:
   sdk: ^3.13.4

@@ -86,7 +86,7 @@ flutter test --no-pub test/network_speed_screen_test.dart test/network_indicator
 
 Native tests: from android/, run :customization:testDebugUnitTest with --tests naming the relevant class. Apply the JAVA_HOME/JVM limits above. Do not claim phone graphics are validated by a successful unit test.
 
-Use --no-pub for focused Flutter checks when dependencies are already resolved. If a release fails on a generated dev-only integration_test registrant, inspect the generated file and dependency state; do not remove production plugins or silently change the dependency graph.
+Use --no-pub for focused Flutter checks when dependencies are already resolved. If direct Gradle compilation fails on a generated reference to `IntegrationTestPlugin` after running tests, run `flutter build apk --release --config-only --target-platform android-arm64` from the repository root, then rerun Gradle. Let this command run its default pub step so Flutter regenerates the Android plugin list for release.
 
 ## Phone deployment
 
