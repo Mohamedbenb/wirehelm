@@ -19,6 +19,14 @@ public class FeaturePolicyTest {
         assertFalse(FeaturePolicy.reportedProcessRunning(54,54,0,"0"));
         assertFalse(FeaturePolicy.reportedProcessRunning(-1,-1,3196,"3196"));
     }
+    @Test public void usableBridgeDoesNotRequireTheNetworkIndicatorToBeEnabled() {
+        assertTrue(FeaturePolicy.usableSystemUiBridge(true, "disabled"));
+        assertTrue(FeaturePolicy.usableSystemUiBridge(true, "active"));
+        assertFalse(FeaturePolicy.usableSystemUiBridge(false, "active"));
+        assertFalse(FeaturePolicy.usableSystemUiBridge(true, "unsupported"));
+        assertFalse(FeaturePolicy.usableSystemUiBridge(true, "error"));
+        assertFalse(FeaturePolicy.usableSystemUiBridge(true, "unknown"));
+    }
     @Test public void boundedConfigurationRejectsUnsafePollingAndSizes() {
         assertTrue(FeaturePolicy.valid(1000,1,10));
         assertFalse(FeaturePolicy.valid(1,1,10));

@@ -243,6 +243,82 @@ void main() {
       true,
     );
   });
+  testWidgets('Network speed recovers while its page is visible', (
+    tester,
+  ) async {
+    final data = healthy();
+    final config = data['config'] as Map;
+    final hook = data['hook'] as Map;
+    config['enabled'] = false;
+    hook['fresh'] = false;
+    data['canEnable'] = false;
+    data['blockers'] = ['Waiting for a fresh SystemUI report'];
+    final capabilities = data['capabilities'] as List;
+    capabilities.remove('xposed.systemuiHook');
+    data['xposed'] = {'connected': false};
+
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    var applyCalls = 0;
+    messenger.setMockMethodCallHandler(LocalCustomization.channel, (
+      call,
+    ) async {
+      if (call.method == 'apply') {
+        applyCalls++;
+        expect(
+          jsonDecode((call.arguments as Map)['config'] as String)['enabled'],
+          true,
+        );
+        if (applyCalls == 1) {
+          throw PlatformException(
+            code: 'CUSTOMIZATION_FAILED',
+            message: 'Root access denied',
+          );
+        }
+        config['enabled'] = true;
+      }
+      return jsonEncode(data);
+    });
+    addTearDown(
+      () =>
+          messenger.setMockMethodCallHandler(LocalCustomization.channel, null),
+    );
+
+    await tester.pumpWidget(
+      const MaterialApp(home: LocalCustomizationScreen()),
+    );
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('UI features'));
+    await tester.tap(find.text('UI features'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Network speed'));
+    await tester.pumpAndSettle();
+
+    final tile = find.widgetWithText(SwitchListTile, 'Show in status bar');
+    expect(tester.widget<SwitchListTile>(tile).onChanged, isNull);
+    expect(find.text('Waiting for a fresh SystemUI report'), findsOneWidget);
+
+    hook['fresh'] = true;
+    hook['state'] = 'disabled';
+    data['canEnable'] = true;
+    data['blockers'] = <String>[];
+    capabilities.add('xposed.systemuiHook');
+    await tester.pump(const Duration(seconds: 11));
+    await tester.pumpAndSettle();
+
+    expect(tester.widget<SwitchListTile>(tile).onChanged, isNotNull);
+    await tester.tap(tile);
+    await tester.pumpAndSettle();
+    expect(tester.widget<SwitchListTile>(tile).value, isFalse);
+    expect(find.textContaining('Root access denied'), findsOneWidget);
+
+    await tester.tap(tile);
+    await tester.pumpAndSettle();
+    expect(tester.widget<SwitchListTile>(tile).value, isTrue);
+    expect(applyCalls, 2);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('preview removes upload and stays usable at narrow widths', (
     tester,
   ) async {

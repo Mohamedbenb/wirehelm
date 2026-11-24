@@ -47,6 +47,7 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
   int _writes = 0;
   String? _error;
   Timer? _poll;
+  Route<void>? _networkSpeedRoute;
   Timer? _networkHealthRefresh;
   bool _networkUpdateRunning = false;
   MapEntry<String, Object>? _pendingNetworkUpdate;
@@ -76,7 +77,8 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
       if (!_busy &&
           mounted &&
           _resumed &&
-          ModalRoute.of(context)?.isCurrent != false) {
+          (ModalRoute.of(context)?.isCurrent != false ||
+              _networkSpeedRoute?.isCurrent == true)) {
         _run('probe', quiet: true);
       }
     });
@@ -112,6 +114,7 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
         _busy = true;
         _error = null;
       });
+      _featureRevision.value++;
     }
     try {
       var result = await LocalCustomization.call(operation, arguments);
@@ -127,7 +130,7 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
           visualRequestId == _visualRequestId &&
           !_networkUpdateRunning) {
         setState(() => _data = result);
-        _featureRevision.value++;
+        if (quiet) _featureRevision.value++;
       }
     } catch (e) {
       if (mounted && requestId == _requestId && !quiet) {
@@ -138,6 +141,7 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
         _polling = false;
       } else if (mounted) {
         setState(() => _busy = false);
+        _featureRevision.value++;
       }
     }
   }
@@ -150,9 +154,13 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
       final config = _section('config');
       config[key] = value;
       if (key == 'position') config['horizontalPosition'] = -1;
+      if (key == 'enabled') {
+        await _run('apply', arguments: {'config': jsonEncode(config)});
+        return;
+      }
       setState(() => _data = {..._data, 'config': config});
       _featureRevision.value++;
-      if (key == 'edgePanelEnabled' || key == 'enabled') {
+      if (key == 'edgePanelEnabled') {
         await _run('apply', arguments: {'config': jsonEncode(config)});
         return;
       }
@@ -575,83 +583,87 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
     Widget Function(Map<String, dynamic>) content, {
     String? saveScope,
   }) async {
+    final networkSpeed = saveScope == 'network';
     unawaited(_run('probe', quiet: true));
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute(
-        builder: (_) => Scaffold(
-          appBar: AppBar(
-            title: Text(title),
-            actions: [
-              if (saveScope != null)
-                TextButton.icon(
-                  onPressed: _busy ? null : () => _saveSetup(scope: saveScope),
-                  icon: const Icon(Icons.save_outlined, size: 20),
-                  label: const Text('Save'),
-                ),
-              if (saveScope != null)
-                IconButton(
-                  tooltip: 'Restore feature settings',
-                  onPressed: _busy
-                      ? null
-                      : () => _restoreSetup(scope: saveScope),
-                  icon: const Icon(Icons.restore_rounded),
-                ),
-              if (saveScope == null) _setupMenu(),
+    final route = MaterialPageRoute<void>(
+      builder: (_) => Scaffold(
+        appBar: AppBar(
+          title: Text(title),
+          actions: [
+            if (saveScope != null)
+              TextButton.icon(
+                onPressed: _busy ? null : () => _saveSetup(scope: saveScope),
+                icon: const Icon(Icons.save_outlined, size: 20),
+                label: const Text('Save'),
+              ),
+            if (saveScope != null)
               IconButton(
-                tooltip: 'Refresh',
-                onPressed: _busy
-                    ? null
-                    : () => _run(
-                        'probe',
-                        arguments: title == 'Carrier profile override'
-                            ? {'requestRoot': true}
-                            : null,
-                      ),
-                icon: const Icon(Icons.refresh),
+                tooltip: 'Restore feature settings',
+                onPressed: _busy ? null : () => _restoreSetup(scope: saveScope),
+                icon: const Icon(Icons.restore_rounded),
               ),
-            ],
-            bottom: PreferredSize(
-              preferredSize: const Size.fromHeight(3),
-              child: SizedBox(
-                height: 3,
-                child: _busy ? const LinearProgressIndicator() : null,
-              ),
+            if (saveScope == null) _setupMenu(),
+            IconButton(
+              tooltip: 'Refresh',
+              onPressed: _busy
+                  ? null
+                  : () => _run(
+                      'probe',
+                      arguments:
+                          networkSpeed || title == 'Carrier profile override'
+                          ? {'requestRoot': true}
+                          : null,
+                    ),
+              icon: const Icon(Icons.refresh),
+            ),
+          ],
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(3),
+            child: SizedBox(
+              height: 3,
+              child: _busy ? const LinearProgressIndicator() : null,
             ),
           ),
-          body: SafeArea(
-            child: ValueListenableBuilder<int>(
-              valueListenable: _featureRevision,
-              builder: (context, _, _) {
-                final controls = ListView(
-                  padding: const EdgeInsets.all(16),
-                  keyboardDismissBehavior:
-                      ScrollViewKeyboardDismissBehavior.onDrag,
-                  children: [content(_data)],
-                );
-                if (title != 'Network speed') return controls;
-                return Column(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                      child: NetworkIndicatorPreview(
-                        config: _section('config'),
-                        onPositionChanged: _busy
-                            ? null
-                            : (value) => _liveNetworkSetting(
-                                'horizontalPosition',
-                                value,
-                              ),
-                      ),
+        ),
+        body: SafeArea(
+          child: ValueListenableBuilder<int>(
+            valueListenable: _featureRevision,
+            builder: (context, _, _) {
+              final controls = ListView(
+                padding: const EdgeInsets.all(16),
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                children: [content(_data)],
+              );
+              if (!networkSpeed) return controls;
+              return Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                    child: NetworkIndicatorPreview(
+                      config: _section('config'),
+                      onPositionChanged: _busy
+                          ? null
+                          : (value) => _liveNetworkSetting(
+                              'horizontalPosition',
+                              value,
+                            ),
                     ),
-                    Expanded(child: controls),
-                  ],
-                );
-              },
-            ),
+                  ),
+                  Expanded(child: controls),
+                ],
+              );
+            },
           ),
         ),
       ),
     );
+    if (networkSpeed) _networkSpeedRoute = route;
+    try {
+      await Navigator.of(context).push(route);
+    } finally {
+      if (_networkSpeedRoute == route) _networkSpeedRoute = null;
+    }
     if (mounted) _run('probe');
   }
 
@@ -1187,15 +1199,21 @@ class _LocalCustomizationScreenState extends State<LocalCustomizationScreen>
     final requirementsMet = networkSpeedFeature.requirement.satisfied(
       ((data['capabilities'] as List?) ?? []).cast<String>().toSet(),
     );
+    final blocked = !enabled && (data['canEnable'] != true || !requirementsMet);
+    final blocker = (data['blockers'] as List?)
+        ?.whereType<String>()
+        .firstOrNull;
     return _card('Preferences', [
       SwitchListTile(
         contentPadding: EdgeInsets.zero,
         title: const Text('Show in status bar'),
-        subtitle: Text(indicatorStatus(data)),
+        subtitle: Text(
+          blocked
+              ? blocker ?? 'Checking SystemUI and the recovery watchdog…'
+              : indicatorStatus(data),
+        ),
         value: enabled,
-        onChanged:
-            _busy ||
-                (!enabled && (data['canEnable'] != true || !requirementsMet))
+        onChanged: _busy || blocked
             ? null
             : (value) => _apply('enabled', value),
       ),

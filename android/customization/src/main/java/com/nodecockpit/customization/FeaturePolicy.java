@@ -22,6 +22,11 @@ public final class FeaturePolicy {
             if (String.valueOf(pid).equals(value)) return true;
         return false;
     }
+    /** Only a fresh, usable report proves the active bridge can deliver configuration. */
+    static boolean usableSystemUiBridge(boolean fresh, String state) {
+        return fresh && ("loaded".equals(state) || "active".equals(state)
+            || "disabled".equals(state) || "waitingForStatusBar".equals(state));
+    }
     public static boolean valid(int interval, int threshold, int textSize) {
         return interval >= 500 && interval <= 5000 && threshold >= 0 && threshold <= 1024 && textSize >= 8 && textSize <= 18;
     }

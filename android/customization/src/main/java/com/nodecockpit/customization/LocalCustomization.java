@@ -382,9 +382,9 @@ public final class LocalCustomization {
         org.json.JSONArray blockers = new org.json.JSONArray();
         if (app.getPackageManager().isSafeMode()) blockers.put("Android safe mode is active");
         if (!supported) blockers.put("Android/SystemUI build has not been validated");
+        boolean hookBridge = FeaturePolicy.usableSystemUiBridge(hook.optBoolean("fresh"), hook.optString("state"));
         if (!hook.optBoolean("fresh")) blockers.put("SystemUI hook has not reported health; activation or a SystemUI restart may be required");
-        else if ("unsupported".equals(hook.optString("state")) || "error".equals(hook.optString("state"))) blockers.put("SystemUI hook reported a compatibility or runtime failure");
-        boolean hookBridge=hook.optBoolean("fresh") && !"unsupported".equals(hook.optString("state")) && !"error".equals(hook.optString("state"));
+        else if (!hookBridge) blockers.put("SystemUI hook reported a compatibility or runtime failure");
         boolean hookDetected = hook.optBoolean("fresh") || hook.optBoolean("currentProcess");
         if (!xp.optBoolean("connected") && !hookDetected) blockers.put("Enable Wirehelm in Vector/compatible Xposed manager");
         else if (xp.optBoolean("connected") && !hookBridge) {
@@ -397,7 +397,7 @@ public final class LocalCustomization {
         org.json.JSONArray capabilities = new org.json.JSONArray();
         if (supported) capabilities.put("device.validatedSystemUi");
         if ((xp.optBoolean("connected") && xp.optBoolean("remoteConfig")) || hookBridge) capabilities.put("xposed.remoteConfiguration");
-        if (xp.optBoolean("connected") && hook.optBoolean("fresh") && !"unsupported".equals(hook.optString("state")) && !"error".equals(hook.optString("state")) && xp.optJSONArray("scope") != null && xp.getJSONArray("scope").toString().contains("com.android.systemui")) capabilities.put("xposed.systemuiHook");
+        if (hookBridge) capabilities.put("xposed.systemuiHook");
         if (rootHealth.optBoolean("authorized") && "healthy".equals(rootHealth.optString("moduleState")) && rootLeaseValid()) capabilities.put("root.recoveryWatchdog");
         JSONObject carrier=carrierStatus();
         if (carrier.optBoolean("backendAvailable")) capabilities.put("root.carrierProfileOverride");
@@ -615,7 +615,17 @@ public final class LocalCustomization {
                     // extending the independently verified watchdog lease.
                     store(app).edit().putString("rootSnapshot",applied.toString()).apply();
                 } else if (requestedActive) throw new IllegalStateException("Recovery backend unavailable");
-                publish();
+                try {
+                    publish();
+                } catch (Exception publicationError) {
+                    JSONObject hook = lastHookReport();
+                    if (!FeaturePolicy.usableSystemUiBridge(hook.optBoolean("fresh"), hook.optString("state"))) {
+                        throw publicationError;
+                    }
+                    android.util.Log.w("NodeCockpit", "Using the SystemUI provider for settings delivery", publicationError);
+                }
+                app.getContentResolver().notifyChange(
+                    Uri.parse("content://com.example.remote_control.customization.health/configuration"), null);
             } catch (Exception e) { emergency(app, "Apply failed: " + e.getMessage()); throw e; }
             return probe(false);
         }
