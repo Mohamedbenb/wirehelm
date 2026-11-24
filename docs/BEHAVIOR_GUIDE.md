@@ -33,7 +33,7 @@ Build117 runtime evidence and remaining limits belong in the latest handoff entr
 
 ## 2. Settings accepted, delivered, drawn and reported
 
-**Owners:** `_liveNetworkSetting` / `_apply` in [local_customization_screen.dart](../lib/screens/local_customization_screen.dart); `applyVisual`, `publish`, `hookConfiguration` in LocalCustomization; `requestConfiguration`, `acceptSettings` and `report` in NetworkSpeedModule; [HealthProvider](../android/customization/src/main/java/com/nodecockpit/customization/HealthProvider.java).
+**Owners:** `_applyLiveSetting` / `_apply` in [local_customization_screen.dart](../lib/screens/local_customization_screen.dart); `applyVisual`, `publish`, `hookConfiguration` in LocalCustomization; `requestConfiguration`, `acceptSettings` and `report` in NetworkSpeedModule; [HealthProvider](../android/customization/src/main/java/com/nodecockpit/customization/HealthProvider.java).
 
 **Source-checked:** local controls update optimistically. Network writes have one in-flight operation and one latest pending value; obsolete responses cannot rewind a newer preview. Native save validates and increments the persisted revision, then publication/provider delivery lets SystemUI apply it on its main thread. Enablement uses the safety apply path; a visual call must not change feature enable flags or bypass emergency state.
 

@@ -42,7 +42,7 @@ Settings are stored in the independent `edgePanelActions` JSON field and include
 - `EdgeActionSettings`: bounded content/style parsing and width/footer rules.
 - `LocalCustomization` / `IndicatorSettings`: persistence, publishing and content signatures.
 - `MainActivity` / `app_shortcut_navigation.dart`: fixed destination intent and cold/warm Flutter routing.
-- `edge_actions_screen.dart`: draft editor; `local_customization_screen.dart` / `clipboard_shelf_screen.dart`: entry points.
+- Edge settings opens the action editor. The clipboard shelf can add its shortcut directly to Favorites. [Edge settings](../lib/screens/edge_panel_screen.dart) · [Action editor](../lib/screens/edge_actions_screen.dart) · [Clipboard shelf](../lib/screens/clipboard_shelf_screen.dart)
 
 Focused native checks cover ID compatibility, preserving folders, duplicates, full lists, invalid toolbar settings, narrow-panel bounds and saved-scope ownership. Widget checks cover cold/warm routing, duplicate suppression and draft Save/Cancel. Build/install/hook activation and actual panel appearance/touch behavior are separate checkpoints; live validation is pending.
 
