@@ -75,7 +75,7 @@ android/app/libs/tsnet-sources.jar
 /build[0-9]*.png
 /vibrator*.txt
 /docs/PI_SSH_ACCESS.md
-/docs/CAMERA_RING_NOTIFICATION_ONLY_AMBIENT.md
+/docs/**/CAMERA_RING_NOTIFICATION_ONLY_AMBIENT.md
 /third_party/liquid-glass-android-views/
 /modules/node-cockpit-carrier/cfg.db
 /android/customization/src/main/assets/node-cockpit-*.zip

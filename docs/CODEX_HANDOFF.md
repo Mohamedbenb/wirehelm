@@ -18,6 +18,7 @@ The status-bar network-speed readout and SSH session reuse across Edge controls 
 
 - Pixel 10 `frankel` runs Android 17, SDK 37, build `CP4A.261105.040.A1`. Preserve KernelSU, ReSuSFS, signing keys and recovery points. Custota work is on hold. [OTA preparation](OTA_PREPARATION.md) · [Custota notes](CUSTOTA.md)
 - Preserve the package `com.example.remote_control`, signing identity and stored settings. The Edge panel uses Card Glass, the handle uses Native Glass and the standalone engine is active. Android owns notification, Quick Settings, brightness and volume styling.
-- Direct deployment and updater publication are separate. The last recorded updater alias was build 296. Photos work is on hold after the user verified background downloads. The Pixel controls which notifications can be dismissed on its lock screen.
+- The CachyOS updater serves build 337 at `build/app/outputs/flutter-apk/node-cockpit-update.apk` under the checkout. Its APK matches the installed hash above, and its adjacent JSON advertises 1.38.31 (337). [Remote updates](REMOTE_UPDATES.md)
+- Photos work is on hold after the user verified background downloads. The Pixel controls which notifications can be dismissed on its lock screen.
 
 See the [code map](CODE_MAP.md) for feature owners and the [deployment guide](BUILD_AND_DEPLOY.md) for release checks. Earlier device results and open checks are in the archived handoffs for [builds 308–335](history/HANDOFF_BUILDS_308-335.md) and [builds 274–297](history/HANDOFF_BUILDS_274-297.md).
